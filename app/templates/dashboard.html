@@ -160,13 +160,13 @@
 
 {% block scripts %}
 <script>
-const equity   = {{ m.equity_curve    | tojson }};
-const avgPnl   = {{ m.avg_pnl_by_day  | tojson }};
-const winRateD = {{ m.win_rate_by_day | tojson }};
-const drawdown = {{ m.drawdown_curve  | tojson }};
-const byPrice  = {{ m.by_price        | tojson }};
-const byHour   = {{ m.by_hour         | tojson }};
-const byDow    = {{ m.by_dow          | tojson }};
+const equity   = {{ metrics.equity_curve    | tojson }};
+const avgPnl   = {{ metrics.avg_pnl_by_day  | tojson }};
+const winRateD = {{ metrics.win_rate_by_day | tojson }};
+const drawdown = {{ metrics.drawdown_curve  | tojson }};
+const byPrice  = {{ metrics.by_price        | tojson }};
+const byHour   = {{ metrics.by_hour         | tojson }};
+const byDow    = {{ metrics.by_dow          | tojson }};
 
 const axisStyle = {
   ticks: { color: "#64748b", maxTicksLimit: 6, font: { size: 10 } },
@@ -183,7 +183,7 @@ new Chart(document.getElementById("donutChart"), {
   type: "doughnut",
   data: {
     datasets: [{
-      data: [{{ m.winning_trades }}, {{ m.losing_trades }}],
+      data: [{{ metrics.winning_trades }}, {{ metrics.losing_trades }}],
       backgroundColor: ["#10b981", "#ef4444"],
       borderWidth: 0,
     }]
@@ -277,3 +277,4 @@ setupPaged("hourPrev",  "hourNext",  "hourPageLabel",  "byHourRows",  byHour,  6
 renderPerfRows("byDowRows", byDow, 0, 7);
 </script>
 {% endblock %}
+
