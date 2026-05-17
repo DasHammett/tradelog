@@ -3,7 +3,7 @@ Description=Tradelog Flask App
 After=network.target
 
 [Service]
-User=pi
+User=dietpi
 Group=www-data
 WorkingDirectory=/opt/tradelog
 Environment="PATH=/opt/tradelog/venv/bin"
@@ -15,7 +15,7 @@ ExecStart=/opt/tradelog/venv/bin/gunicorn \
     --timeout 60 \
     wsgi:app
 ExecStartPre=/bin/mkdir -p /run/tradelog
-ExecStartPre=/bin/chown pi:www-data /run/tradelog
+ExecStartPre=/bin/chown dietpi:www-data /run/tradelog
 RuntimeDirectory=tradelog
 Restart=always
 RestartSec=5
