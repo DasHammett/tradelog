@@ -54,7 +54,7 @@ def _parse_tlg_records(content: str):
     errors          = []
     in_stock_section = False
     for lineno, line in enumerate(content.splitlines(), 1):
-        line = line.strip()
+        line = line.strip().rstrip("\r")   # handle Windows CRLF and any stray CR
         if not line or line == "EOF":
             continue
         # Lines without a pipe are section headers — use them to track position
@@ -230,12 +230,15 @@ def import_file(content: str, filename: str) -> dict:
             records, parse_errors = _parse_csv_records(content)
     # --- Validation: must have parsed at least one record ---
     if not records and not parse_errors:
+        # Build a diagnostic snippet to help debug
+        first_lines = content.splitlines()[:10]
+        diag = " | ".join(repr(l) for l in first_lines)
         return {
             "ok": False,
             "file_type": file_type,
             "message": "No valid trade records found in file. "
                        "Make sure this is an IBKR TLG or CSV Activity Statement.",
-            "errors": [],
+            "errors": [f"First lines of file: {diag}"],
             "duplicates": [],
             "warnings": [],
         }
