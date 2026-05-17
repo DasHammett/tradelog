@@ -2,127 +2,278 @@
 {% block title %}Dashboard — Tradelog{% endblock %}
 
 {% block content %}
-<div class="flex items-center justify-between mb-6">
-  <h1 class="text-2xl font-bold text-white">Dashboard</h1>
+{% set m = metrics %}
+
+<!-- Header -->
+<div class="flex items-center justify-between mb-5">
+  <h1 class="text-xl font-bold text-white">Dashboard</h1>
   <div class="flex gap-2">
     {% for d in [7, 30, 90] %}
     <a href="?days={{ d }}"
        class="px-3 py-1.5 rounded-lg text-sm font-medium transition-colors
-              {% if days == d %}bg-brand text-white{% else %}bg-slate-700 text-slate-300 hover:bg-slate-600{% endif %}">
+              {% if days == d %}bg-sky-600 text-white{% else %}bg-slate-700 text-slate-300 hover:bg-slate-600{% endif %}">
       {{ d }}d
     </a>
     {% endfor %}
   </div>
 </div>
 
-<!-- Metric cards -->
-<div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-  {% set m = metrics %}
+<!-- ── ROW 1: Top stat cards ── -->
+<div class="grid grid-cols-4 gap-3 mb-3">
 
-  <div class="card">
-    <p class="text-slate-400 text-xs uppercase tracking-wide mb-1">Net P&amp;L</p>
-    <p class="text-2xl font-bold {% if m.net_pnl >= 0 %}gain{% else %}loss{% endif %}">
+  <!-- Total Gain/Loss -->
+  <div class="bg-slate-800 border border-slate-700 rounded-xl p-4">
+    <p class="text-slate-400 text-xs uppercase tracking-wide mb-2">Total Gain / Loss</p>
+    <p class="text-3xl font-bold {% if m.net_pnl >= 0 %}text-emerald-400{% else %}text-red-400{% endif %}">
       ${{ "%.2f"|format(m.net_pnl) }}
     </p>
   </div>
 
-  <div class="card">
-    <p class="text-slate-400 text-xs uppercase tracking-wide mb-1">Win Rate</p>
-    <p class="text-2xl font-bold text-white">{{ m.win_rate }}%</p>
-    <p class="text-slate-500 text-xs">{{ m.total_trades }} trades</p>
+  <!-- Avg Winner vs Loser bars -->
+  <div class="bg-slate-800 border border-slate-700 rounded-xl p-4">
+    <p class="text-slate-400 text-xs uppercase tracking-wide mb-3">Avg Winning vs Losing Trade</p>
+    {% set max_bar = [m.avg_winner, m.avg_loser] | max %}
+    <div class="space-y-2">
+      <div>
+        <div class="flex justify-between text-xs mb-1">
+          <span class="text-emerald-400">$+{{ "%.2f"|format(m.avg_winner) }}</span>
+        </div>
+        <div class="h-2 bg-slate-700 rounded-full overflow-hidden">
+          <div class="h-full bg-emerald-500 rounded-full"
+               style="width:{% if max_bar > 0 %}{{ [m.avg_winner/max_bar*100,100]|min|round }}%{% else %}0%{% endif %}"></div>
+        </div>
+      </div>
+      <div>
+        <div class="flex justify-between text-xs mb-1">
+          <span class="text-red-400">-${{ "%.2f"|format(m.avg_loser) }}</span>
+        </div>
+        <div class="h-2 bg-slate-700 rounded-full overflow-hidden">
+          <div class="h-full bg-red-500 rounded-full"
+               style="width:{% if max_bar > 0 %}{{ [m.avg_loser/max_bar*100,100]|min|round }}%{% else %}0%{% endif %}"></div>
+        </div>
+      </div>
+    </div>
   </div>
 
-  <div class="card">
-    <p class="text-slate-400 text-xs uppercase tracking-wide mb-1">Profit Factor</p>
-    <p class="text-2xl font-bold text-white">
-      {% if m.profit_factor %}{{ "%.2f"|format(m.profit_factor) }}{% else %}—{% endif %}
-    </p>
+  <!-- Win vs Loss Donut -->
+  <div class="bg-slate-800 border border-slate-700 rounded-xl p-4 flex flex-col items-center justify-center">
+    <p class="text-slate-400 text-xs uppercase tracking-wide mb-2 self-start">Winning vs Losing Trades</p>
+    <canvas id="donutChart" width="90" height="90"></canvas>
+    <div class="flex gap-4 mt-2 text-xs">
+      <span class="text-emerald-400">{{ m.winning_trades }} W</span>
+      <span class="text-red-400">{{ m.losing_trades }} L</span>
+    </div>
   </div>
 
-  <div class="card">
-    <p class="text-slate-400 text-xs uppercase tracking-wide mb-1">Expectancy</p>
-    <p class="text-2xl font-bold {% if m.expectancy >= 0 %}gain{% else %}loss{% endif %}">
-      ${{ "%.2f"|format(m.expectancy) }}
-    </p>
-  </div>
-
-  <div class="card">
-    <p class="text-slate-400 text-xs uppercase tracking-wide mb-1">Avg Winner</p>
-    <p class="text-2xl font-bold gain">${{ "%.2f"|format(m.avg_winner) }}</p>
-  </div>
-
-  <div class="card">
-    <p class="text-slate-400 text-xs uppercase tracking-wide mb-1">Avg Loser</p>
-    <p class="text-2xl font-bold loss">${{ "%.2f"|format(m.avg_loser) }}</p>
-  </div>
-
-  <div class="card">
-    <p class="text-slate-400 text-xs uppercase tracking-wide mb-1">Max Drawdown</p>
-    <p class="text-2xl font-bold loss">${{ "%.2f"|format(m.max_drawdown) }}</p>
-  </div>
-
-  <div class="card">
-    <p class="text-slate-400 text-xs uppercase tracking-wide mb-1">Total Trades</p>
-    <p class="text-2xl font-bold text-white">{{ m.total_trades }}</p>
+  <!-- Hold Time -->
+  <div class="bg-slate-800 border border-slate-700 rounded-xl p-4">
+    <p class="text-slate-400 text-xs uppercase tracking-wide mb-3">Hold Time: Winners vs Losers</p>
+    {% set ht = m.hold_time %}
+    {% set max_ht = [ht.winners, ht.losers] | max %}
+    <div class="space-y-2">
+      <div>
+        <div class="text-xs mb-1 text-emerald-400">{{ ht.winners }} min</div>
+        <div class="h-2 bg-slate-700 rounded-full overflow-hidden">
+          <div class="h-full bg-emerald-500 rounded-full"
+               style="width:{% if max_ht > 0 %}{{ [ht.winners/max_ht*100,100]|min|round }}%{% else %}0%{% endif %}"></div>
+        </div>
+      </div>
+      <div>
+        <div class="text-xs mb-1 text-red-400">{{ ht.losers }} min</div>
+        <div class="h-2 bg-slate-700 rounded-full overflow-hidden">
+          <div class="h-full bg-red-500 rounded-full"
+               style="width:{% if max_ht > 0 %}{{ [ht.losers/max_ht*100,100]|min|round }}%{% else %}0%{% endif %}"></div>
+        </div>
+      </div>
+    </div>
   </div>
 </div>
 
-<!-- Charts row -->
-<div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
-  <div class="card">
-    <p class="text-slate-300 font-semibold mb-4">Equity Curve</p>
-    <canvas id="equityChart" height="180"></canvas>
+<!-- ── ROW 2: Cumulative P&L + Avg Trade P&L ── -->
+<div class="grid grid-cols-2 gap-3 mb-3">
+  <div class="bg-slate-800 border border-slate-700 rounded-xl p-4">
+    <p class="text-slate-400 text-xs uppercase tracking-wide mb-3">Cumulative P&amp;L</p>
+    <canvas id="equityChart" height="120"></canvas>
   </div>
-  <div class="card">
-    <p class="text-slate-300 font-semibold mb-4">Daily P&amp;L</p>
-    <canvas id="pnlChart" height="180"></canvas>
+  <div class="bg-slate-800 border border-slate-700 rounded-xl p-4">
+    <p class="text-slate-400 text-xs uppercase tracking-wide mb-3">Average Trade P&amp;L</p>
+    <canvas id="avgPnlChart" height="120"></canvas>
   </div>
 </div>
+
+<!-- ── ROW 3: Performance tables + Commissions ── -->
+<div class="grid grid-cols-3 gap-3 mb-3">
+
+  <!-- By Price -->
+  <div class="bg-slate-800 border border-slate-700 rounded-xl p-4">
+    <p class="text-slate-400 text-xs uppercase tracking-wide mb-3">Performance By Price</p>
+    <div id="byPriceRows" class="space-y-1.5"></div>
+    <div class="flex justify-between items-center mt-3 text-slate-500 text-xs">
+      <button id="pricePrev" class="px-2 py-1 bg-slate-700 rounded hover:bg-slate-600">‹</button>
+      <span id="pricePageLabel"></span>
+      <button id="priceNext" class="px-2 py-1 bg-slate-700 rounded hover:bg-slate-600">›</button>
+    </div>
+  </div>
+
+  <!-- By Hour -->
+  <div class="bg-slate-800 border border-slate-700 rounded-xl p-4">
+    <p class="text-slate-400 text-xs uppercase tracking-wide mb-3">Performance By Hour Of Day</p>
+    <div id="byHourRows" class="space-y-1.5"></div>
+    <div class="flex justify-between items-center mt-3 text-slate-500 text-xs">
+      <button id="hourPrev" class="px-2 py-1 bg-slate-700 rounded hover:bg-slate-600">‹</button>
+      <span id="hourPageLabel"></span>
+      <button id="hourNext" class="px-2 py-1 bg-slate-700 rounded hover:bg-slate-600">›</button>
+    </div>
+  </div>
+
+  <!-- By DOW + Commissions -->
+  <div class="flex flex-col gap-3">
+    <div class="bg-slate-800 border border-slate-700 rounded-xl p-4">
+      <p class="text-slate-400 text-xs uppercase tracking-wide mb-3">Performance By Day Of Week</p>
+      <div id="byDowRows" class="space-y-1.5"></div>
+    </div>
+    <div class="bg-slate-800 border border-slate-700 rounded-xl p-4">
+      <p class="text-slate-400 text-xs uppercase tracking-wide mb-1">Total Commissions</p>
+      <p class="text-2xl font-bold text-white">${{ "%.2f"|format(m.total_commissions) }}</p>
+    </div>
+    <div class="bg-slate-800 border border-slate-700 rounded-xl p-4">
+      <p class="text-slate-400 text-xs uppercase tracking-wide mb-1">Total Fees</p>
+      <p class="text-2xl font-bold text-white">${{ "%.2f"|format(m.total_fees) }}</p>
+    </div>
+  </div>
+
+</div>
+
+<!-- ── ROW 4: Win % + Drawdown ── -->
+<div class="grid grid-cols-2 gap-3">
+  <div class="bg-slate-800 border border-slate-700 rounded-xl p-4">
+    <p class="text-slate-400 text-xs uppercase tracking-wide mb-3">Win %</p>
+    <canvas id="winRateChart" height="120"></canvas>
+  </div>
+  <div class="bg-slate-800 border border-slate-700 rounded-xl p-4">
+    <p class="text-slate-400 text-xs uppercase tracking-wide mb-3">Cumulative Drawdown</p>
+    <canvas id="drawdownChart" height="120"></canvas>
+  </div>
+</div>
+
 {% endblock %}
 
 {% block scripts %}
 <script>
-const equity = {{ metrics.equity_curve | tojson }};
-const pnlData = {{ metrics.pnl_by_day | tojson }};
+const equity   = {{ m.equity_curve    | tojson }};
+const avgPnl   = {{ m.avg_pnl_by_day  | tojson }};
+const winRateD = {{ m.win_rate_by_day | tojson }};
+const drawdown = {{ m.drawdown_curve  | tojson }};
+const byPrice  = {{ m.by_price        | tojson }};
+const byHour   = {{ m.by_hour         | tojson }};
+const byDow    = {{ m.by_dow          | tojson }};
 
-const chartDefaults = {
+const axisStyle = {
+  ticks: { color: "#64748b", maxTicksLimit: 6, font: { size: 10 } },
+  grid:  { color: "#1e293b" }
+};
+const baseOpts = {
   responsive: true,
   plugins: { legend: { display: false } },
-  scales: {
-    x: { ticks: { color: "#94a3b8", maxTicksLimit: 6 }, grid: { color: "#1e293b" } },
-    y: { ticks: { color: "#94a3b8" }, grid: { color: "#1e293b" } }
-  }
+  scales: { x: axisStyle, y: axisStyle }
 };
+
+// Donut
+new Chart(document.getElementById("donutChart"), {
+  type: "doughnut",
+  data: {
+    datasets: [{
+      data: [{{ m.winning_trades }}, {{ m.losing_trades }}],
+      backgroundColor: ["#10b981", "#ef4444"],
+      borderWidth: 0,
+    }]
+  },
+  options: { responsive: false, cutout: "70%", plugins: { legend: { display: false } } }
+});
 
 // Equity curve
 new Chart(document.getElementById("equityChart"), {
   type: "line",
   data: {
     labels: equity.map(d => d.date),
-    datasets: [{
-      data: equity.map(d => d.equity),
-      borderColor: "#0ea5e9",
-      backgroundColor: "rgba(14,165,233,0.1)",
-      fill: true,
-      tension: 0.3,
-      pointRadius: 2,
-    }]
+    datasets: [{ data: equity.map(d => d.equity),
+      borderColor: "#10b981", backgroundColor: "rgba(16,185,129,0.07)",
+      fill: true, tension: 0.3, pointRadius: 1, borderWidth: 2 }]
   },
-  options: chartDefaults
+  options: baseOpts
 });
 
-// Daily P&L bar
-new Chart(document.getElementById("pnlChart"), {
+// Avg P&L per day
+new Chart(document.getElementById("avgPnlChart"), {
   type: "bar",
   data: {
-    labels: pnlData.map(d => d.date),
-    datasets: [{
-      data: pnlData.map(d => d.pnl),
-      backgroundColor: pnlData.map(d => d.pnl >= 0 ? "rgba(34,197,94,0.7)" : "rgba(239,68,68,0.7)"),
-      borderRadius: 4,
-    }]
+    labels: avgPnl.map(d => d.date),
+    datasets: [{ data: avgPnl.map(d => d.avg_pnl),
+      backgroundColor: avgPnl.map(d => d.avg_pnl >= 0 ? "rgba(16,185,129,0.8)" : "rgba(239,68,68,0.8)"),
+      borderRadius: 3 }]
   },
-  options: chartDefaults
+  options: baseOpts
 });
+
+// Win rate
+new Chart(document.getElementById("winRateChart"), {
+  type: "bar",
+  data: {
+    labels: winRateD.map(d => d.date),
+    datasets: [{ data: winRateD.map(d => d.win_rate),
+      backgroundColor: "rgba(16,185,129,0.8)", borderRadius: 3 }]
+  },
+  options: { ...baseOpts, scales: { x: axisStyle, y: { ...axisStyle, min: 0, max: 100 } } }
+});
+
+// Drawdown
+new Chart(document.getElementById("drawdownChart"), {
+  type: "line",
+  data: {
+    labels: drawdown.map(d => d.date),
+    datasets: [{ data: drawdown.map(d => d.drawdown),
+      borderColor: "#ef4444", backgroundColor: "rgba(239,68,68,0.07)",
+      fill: true, tension: 0.3, pointRadius: 1, borderWidth: 2 }]
+  },
+  options: baseOpts
+});
+
+// ── Perf bar rows ──
+function renderPerfRows(containerId, data, page, pageSize) {
+  const el = document.getElementById(containerId);
+  const slice = data.slice(page * pageSize, (page + 1) * pageSize);
+  const maxAbs = Math.max(...data.map(d => Math.abs(d.pnl)), 0.01);
+  el.innerHTML = slice.map(row => {
+    const pos = row.pnl >= 0;
+    const w   = Math.round(Math.abs(row.pnl) / maxAbs * 100);
+    return `<div class="flex items-center gap-2 text-xs">
+      <span class="text-slate-400 w-20 shrink-0 truncate">${row.label}</span>
+      <div class="flex-1 h-1.5 bg-slate-700 rounded-full overflow-hidden">
+        <div class="h-full ${pos ? "bg-emerald-500" : "bg-red-500"} rounded-full" style="width:${w}%"></div>
+      </div>
+      <span class="${pos ? "text-emerald-400" : "text-red-400"} w-14 text-right shrink-0">
+        ${pos ? "" : "-"}$${Math.abs(row.pnl).toFixed(2)}
+      </span>
+      <span class="text-slate-500 w-10 text-right shrink-0">${row.pct}%</span>
+    </div>`;
+  }).join("");
+}
+
+function setupPaged(prevId, nextId, labelId, containerId, data, pageSize) {
+  let page = 0;
+  const total = Math.ceil(data.length / pageSize) || 1;
+  const lbl = document.getElementById(labelId);
+  const render = () => {
+    renderPerfRows(containerId, data, page, pageSize);
+    lbl.textContent = `${page + 1} / ${total}`;
+  };
+  document.getElementById(prevId).addEventListener("click", () => { if (page > 0) { page--; render(); } });
+  document.getElementById(nextId).addEventListener("click", () => { if (page < total - 1) { page++; render(); } });
+  render();
+}
+
+setupPaged("pricePrev", "priceNext", "pricePageLabel", "byPriceRows", byPrice, 6);
+setupPaged("hourPrev",  "hourNext",  "hourPageLabel",  "byHourRows",  byHour,  6);
+renderPerfRows("byDowRows", byDow, 0, 7);
 </script>
 {% endblock %}
