@@ -5,16 +5,109 @@
 <h1 class="text-2xl font-bold text-white mb-6">Import Trades</h1>
 
 {% if result %}
-<div class="mb-6 p-4 rounded-xl border {% if result.ok %}border-green-700 bg-green-900/20 text-green-400{% else %}border-red-700 bg-red-900/20 text-red-400{% endif %}">
+  {# ── Success ── #}
   {% if result.ok %}
-    ✓ Import successful — {{ result.new_trades }} new trade(s) imported.
+  <div class="mb-6 rounded-xl border border-green-700 bg-green-900/20 p-4">
+    <p class="text-green-400 font-semibold">
+      ✓ Import successful —
+      {{ result.new_trades }} trade(s) imported
+      {% if result.file_type %}from {{ result.file_type }} file{% endif %}.
+    </p>
+    {% if result.warnings %}
+    <details class="mt-3">
+      <summary class="text-yellow-400 text-sm cursor-pointer">
+        ⚠ {{ result.warnings|length }} non-fatal warning(s)
+      </summary>
+      <ul class="mt-2 space-y-1">
+        {% for w in result.warnings %}
+        <li class="text-yellow-300 text-xs font-mono">{{ w }}</li>
+        {% endfor %}
+      </ul>
+    </details>
+    {% endif %}
+  </div>
+
+  {# ── Duplicate abort ── #}
+  {% elif result.duplicates %}
+  <div class="mb-6 rounded-xl border border-yellow-600 bg-yellow-900/20 p-4">
+    <p class="text-yellow-400 font-semibold mb-2">
+      ⚠ Import aborted — {{ result.duplicates|length }} duplicate(s) already in database.
+    </p>
+    <p class="text-slate-400 text-sm mb-3">
+      No trades were written. Remove the duplicates from your file and re-upload,
+      or export a narrower date range from IBKR.
+    </p>
+    {% if result.parsed_count is defined %}
+    <p class="text-slate-500 text-xs mb-3">File contained {{ result.parsed_count }} trade(s) total.</p>
+    {% endif %}
+    <details>
+      <summary class="text-yellow-400 text-sm cursor-pointer">Show duplicate IDs</summary>
+      <ul class="mt-2 space-y-1 max-h-48 overflow-y-auto">
+        {% for d in result.duplicates %}
+        <li class="text-yellow-300 text-xs font-mono">{{ d }}</li>
+        {% endfor %}
+      </ul>
+    </details>
+    {% if result.errors %}
+    <details class="mt-3">
+      <summary class="text-slate-400 text-sm cursor-pointer">Parse warnings ({{ result.errors|length }})</summary>
+      <ul class="mt-2 space-y-1">
+        {% for e in result.errors %}
+        <li class="text-slate-400 text-xs font-mono">{{ e }}</li>
+        {% endfor %}
+      </ul>
+    </details>
+    {% endif %}
+  </div>
+
+  {# ── Validation / parse error ── #}
   {% else %}
-    ✗ {{ result.message }}
+  <div class="mb-6 rounded-xl border border-red-700 bg-red-900/20 p-4">
+    <p class="text-red-400 font-semibold mb-2">✗ {{ result.message }}</p>
+    {% if result.errors %}
+    <details {% if result.errors|length <= 5 %}open{% endif %}>
+      <summary class="text-red-300 text-sm cursor-pointer">
+        Show {{ result.errors|length }} error(s)
+      </summary>
+      <ul class="mt-2 space-y-1 max-h-48 overflow-y-auto">
+        {% for e in result.errors %}
+        <li class="text-red-300 text-xs font-mono">{{ e }}</li>
+        {% endfor %}
+      </ul>
+    </details>
+    {% endif %}
+  </div>
   {% endif %}
-</div>
 {% endif %}
 
 <div class="grid lg:grid-cols-2 gap-6">
+
+  <!-- TLG / CSV Upload -->
+  <div class="card">
+    <h2 class="text-white font-semibold text-lg mb-1">Upload Trade File</h2>
+    <p class="text-slate-400 text-sm mb-1">
+      Supports <span class="text-brand font-medium">.tlg</span> (Third-Party TradeLog)
+      and <span class="text-brand font-medium">.csv</span> (Activity Statement) files
+      from IBKR.
+    </p>
+    <p class="text-slate-500 text-xs mb-4">
+      File is fully validated and checked for duplicates before anything is written to the database.
+    </p>
+    <form method="POST" enctype="multipart/form-data">
+      <input type="hidden" name="action" value="file_upload" />
+      <label class="block mb-4">
+        <span class="text-slate-400 text-sm block mb-1">Select file (.tlg or .csv)</span>
+        <input type="file" name="file" accept=".tlg,.csv,.txt"
+               class="block w-full text-sm text-slate-400
+                      file:mr-3 file:py-2 file:px-4 file:rounded-lg file:border-0
+                      file:bg-slate-700 file:text-white hover:file:bg-slate-600 cursor-pointer" />
+      </label>
+      <button type="submit"
+              class="bg-brand hover:bg-brand-dark text-white px-5 py-2.5 rounded-lg font-medium transition-colors">
+        Validate &amp; Import
+      </button>
+    </form>
+  </div>
 
   <!-- IBKR Flex Sync -->
   <div class="card">
@@ -22,56 +115,30 @@
     <p class="text-slate-400 text-sm mb-4">
       Automatically pulls trades from IBKR via the Flex Web Service.
       Requires <code class="text-brand">FLEX_TOKEN</code> and
-      <code class="text-brand">FLEX_QUERY_ID</code> set in your <code>.env</code> file.
+      <code class="text-brand">FLEX_QUERY_ID</code> in your <code>.env</code> file.
     </p>
     <form method="POST">
       <input type="hidden" name="action" value="flex_sync" />
       <button type="submit"
-              class="bg-brand hover:bg-brand-dark text-white px-5 py-2.5 rounded-lg font-medium transition-colors">
+              class="bg-slate-700 hover:bg-slate-600 text-white px-5 py-2.5 rounded-lg font-medium transition-colors">
         Sync Now
       </button>
     </form>
-    <div class="mt-4 text-slate-500 text-xs">
-      Auto-sync runs daily at {{ config.FLEX_SYNC_HOUR }}:00 via scheduler.
-    </div>
-  </div>
-
-  <!-- CSV Upload -->
-  <div class="card">
-    <h2 class="text-white font-semibold text-lg mb-1">Upload Activity Statement</h2>
-    <p class="text-slate-400 text-sm mb-4">
-      Upload a CSV activity statement exported from IBKR
-      (Account Management → Reports → Activity).
-      Select <strong>Trades</strong> section in CSV format.
-    </p>
-    <form method="POST" enctype="multipart/form-data">
-      <input type="hidden" name="action" value="file_upload" />
-      <label class="block mb-3">
-        <span class="text-slate-400 text-sm">CSV file</span>
-        <input type="file" name="file" accept=".csv,.txt"
-               class="mt-1 block w-full text-sm text-slate-400 file:mr-3 file:py-2 file:px-4
-                      file:rounded-lg file:border-0 file:bg-slate-700 file:text-white
-                      hover:file:bg-slate-600 cursor-pointer" />
-      </label>
-      <button type="submit"
-              class="bg-slate-700 hover:bg-slate-600 text-white px-5 py-2.5 rounded-lg font-medium transition-colors">
-        Upload &amp; Import
-      </button>
-    </form>
+    <p class="mt-3 text-slate-500 text-xs">Auto-sync runs daily via scheduler.</p>
   </div>
 
 </div>
 
-<!-- Setup instructions -->
+<!-- How to get TLG file -->
 <div class="card mt-6">
-  <h2 class="text-white font-semibold mb-3">Setting up Flex Query in IBKR</h2>
+  <h2 class="text-white font-semibold mb-3">How to download your TLG file from IBKR</h2>
   <ol class="text-slate-400 text-sm space-y-2 list-decimal list-inside">
-    <li>Log in to IBKR Account Management → Reports → Flex Queries</li>
-    <li>Create a new Activity Flex Query — include the <strong>Trades</strong> section in XML format</li>
-    <li>Set date range to "Last N Days" (e.g. 7)</li>
-    <li>Save the query and note the <strong>Query ID</strong></li>
-    <li>Go to Flex Web Service → Generate Token — note the <strong>Token</strong></li>
-    <li>Add both to your <code class="text-brand">.env</code> file on the RPi</li>
+    <li>Log in to IBKR Account Management</li>
+    <li>Go to <strong>Performance &amp; Reports → Statements</strong></li>
+    <li>On the right side, look for <strong>Third Party Downloads</strong></li>
+    <li>Select <strong>TradeLog</strong> from the dropdown</li>
+    <li>Choose your date range and click <strong>Run</strong></li>
+    <li>Download the <code class="text-brand">.tlg</code> file and upload it above</li>
   </ol>
 </div>
 {% endblock %}
