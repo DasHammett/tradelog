@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block title %}Journal — Tradelog{% endblock %}
+
+{% block content %}
+<div class="flex items-center justify-between mb-6">
+  <h1 class="text-2xl font-bold text-white">Journal</h1>
+  <a href="/tradelog/journal/new"
+     class="bg-brand hover:bg-brand-dark text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors">
+    + Today's Entry
+  </a>
+</div>
+
+<div class="grid gap-3">
+  {% for e in entries %}
+  <a href="/tradelog/journal/{{ e.date.isoformat() }}"
+     class="card flex items-center justify-between hover:border-slate-500 transition-colors">
+    <div class="flex items-center gap-4">
+      {% set mood_map = {"great": "😄", "good": "🙂", "neutral": "😐", "bad": "😕", "terrible": "😞"} %}
+      <span class="text-2xl">{{ mood_map.get(e.mood, "📝") }}</span>
+      <div>
+        <p class="text-white font-semibold">{{ e.date.strftime("%A, %B %d %Y") }}</p>
+        <p class="text-slate-400 text-sm truncate max-w-lg">
+          {{ (e.body or "No content")[:120] }}{% if e.body and e.body|length > 120 %}…{% endif %}
+        </p>
+      </div>
+    </div>
+    <span class="text-slate-500 text-xs shrink-0">{{ e.updated_at.strftime("%H:%M") }}</span>
+  </a>
+  {% else %}
+  <div class="card text-center py-12">
+    <p class="text-slate-500">No journal entries yet.</p>
+    <a href="/tradelog/journal/new" class="text-brand hover:underline text-sm mt-2 inline-block">
+      Write your first entry →
+    </a>
+  </div>
+  {% endfor %}
+</div>
+{% endblock %}

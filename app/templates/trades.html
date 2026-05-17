@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+{% block title %}Trades — Tradelog{% endblock %}
+
+{% block content %}
+<div class="flex items-center justify-between mb-6">
+  <h1 class="text-2xl font-bold text-white">Trades</h1>
+</div>
+
+<!-- Filters -->
+<form method="GET" class="flex gap-3 mb-6 flex-wrap">
+  <input type="text" name="symbol" value="{{ symbol }}" placeholder="Symbol"
+         class="bg-slate-800 border border-slate-600 rounded-lg px-3 py-2 text-sm text-white w-28 focus:outline-none focus:border-brand" />
+  <input type="date" name="from" value="{{ date_from }}"
+         class="bg-slate-800 border border-slate-600 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-brand" />
+  <input type="date" name="to" value="{{ date_to }}"
+         class="bg-slate-800 border border-slate-600 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-brand" />
+  <button type="submit"
+          class="bg-brand hover:bg-brand-dark text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors">
+    Filter
+  </button>
+  <a href="/tradelog/trades" class="text-slate-400 hover:text-white px-3 py-2 text-sm">Clear</a>
+</form>
+
+<!-- Table -->
+<div class="card p-0 overflow-hidden">
+  <table class="w-full text-sm">
+    <thead>
+      <tr class="border-b border-slate-700 text-slate-400 text-xs uppercase tracking-wide">
+        <th class="px-4 py-3 text-left">Date</th>
+        <th class="px-4 py-3 text-left">Symbol</th>
+        <th class="px-4 py-3 text-left">Side</th>
+        <th class="px-4 py-3 text-right">Qty</th>
+        <th class="px-4 py-3 text-right">Entry</th>
+        <th class="px-4 py-3 text-right">Exit</th>
+        <th class="px-4 py-3 text-right">Duration</th>
+        <th class="px-4 py-3 text-right">Gross P&amp;L</th>
+        <th class="px-4 py-3 text-right">Net P&amp;L</th>
+        <th class="px-4 py-3 text-right">Commission</th>
+      </tr>
+    </thead>
+    <tbody class="divide-y divide-slate-700/50">
+      {% for t in trades %}
+      <tr class="hover:bg-slate-700/40 cursor-pointer transition-colors"
+          onclick="window.location='/tradelog/trades/{{ t.id }}'">
+        <td class="px-4 py-3 text-slate-300">{{ t.entry_time.strftime("%Y-%m-%d %H:%M") }}</td>
+        <td class="px-4 py-3 font-semibold text-white">{{ t.symbol }}</td>
+        <td class="px-4 py-3">
+          <span class="px-2 py-0.5 rounded text-xs font-medium
+                       {% if t.side == 'LONG' %}bg-green-900/60 text-green-400{% else %}bg-red-900/60 text-red-400{% endif %}">
+            {{ t.side }}
+          </span>
+        </td>
+        <td class="px-4 py-3 text-right text-slate-300">{{ t.quantity }}</td>
+        <td class="px-4 py-3 text-right text-slate-300">${{ "%.2f"|format(t.entry_price) }}</td>
+        <td class="px-4 py-3 text-right text-slate-300">
+          {% if t.exit_price %}${{ "%.2f"|format(t.exit_price) }}{% else %}—{% endif %}
+        </td>
+        <td class="px-4 py-3 text-right text-slate-400">
+          {% if t.duration_minutes %}{{ t.duration_minutes }}m{% else %}—{% endif %}
+        </td>
+        <td class="px-4 py-3 text-right {% if t.gross_pnl and t.gross_pnl >= 0 %}gain{% elif t.gross_pnl %}loss{% endif %}">
+          {% if t.gross_pnl is not none %}${{ "%.2f"|format(t.gross_pnl) }}{% else %}—{% endif %}
+        </td>
+        <td class="px-4 py-3 text-right font-semibold {% if t.net_pnl and t.net_pnl >= 0 %}gain{% elif t.net_pnl %}loss{% endif %}">
+          {% if t.net_pnl is not none %}${{ "%.2f"|format(t.net_pnl) }}{% else %}—{% endif %}
+        </td>
+        <td class="px-4 py-3 text-right text-slate-500">${{ "%.2f"|format(t.commission) }}</td>
+      </tr>
+      {% else %}
+      <tr>
+        <td colspan="10" class="px-4 py-12 text-center text-slate-500">
+          No trades found. <a href="/tradelog/import" class="text-brand hover:underline">Import trades →</a>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

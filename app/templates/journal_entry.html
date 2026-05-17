@@ -1,0 +1,86 @@
+{% extends "base.html" %}
+{% block title %}Journal {{ entry_date }} — Tradelog{% endblock %}
+
+{% block content %}
+<div class="flex items-center gap-3 mb-6">
+  <a href="/tradelog/journal" class="text-slate-400 hover:text-white text-sm">← Journal</a>
+  <h1 class="text-2xl font-bold text-white">{{ entry_date.strftime("%A, %B %d %Y") }}</h1>
+</div>
+
+{% if summary %}
+<div class="grid grid-cols-4 gap-4 mb-6">
+  <div class="card text-center">
+    <p class="text-slate-400 text-xs mb-1">Net P&amp;L</p>
+    <p class="font-bold {% if summary.net_pnl >= 0 %}gain{% else %}loss{% endif %}">
+      ${{ "%.2f"|format(summary.net_pnl) }}
+    </p>
+  </div>
+  <div class="card text-center">
+    <p class="text-slate-400 text-xs mb-1">Trades</p>
+    <p class="font-bold text-white">{{ summary.total_trades }}</p>
+  </div>
+  <div class="card text-center">
+    <p class="text-slate-400 text-xs mb-1">Win Rate</p>
+    <p class="font-bold text-white">{{ summary.win_rate }}%</p>
+  </div>
+  <div class="card text-center">
+    <p class="text-slate-400 text-xs mb-1">Commission</p>
+    <p class="font-bold text-slate-300">${{ "%.2f"|format(summary.total_commission) }}</p>
+  </div>
+</div>
+{% endif %}
+
+<form method="POST" class="card">
+  <!-- Mood selector -->
+  <div class="mb-5">
+    <p class="text-slate-400 text-sm mb-2">How did trading feel today?</p>
+    <div class="flex gap-3">
+      {% for mood, emoji, label in [
+        ("great",   "😄", "Great"),
+        ("good",    "🙂", "Good"),
+        ("neutral", "😐", "Neutral"),
+        ("bad",     "😕", "Bad"),
+        ("terrible","😞", "Terrible")
+      ] %}
+      <label class="flex flex-col items-center gap-1 cursor-pointer">
+        <input type="radio" name="mood" value="{{ mood }}" class="sr-only"
+               {% if entry and entry.mood == mood %}checked{% endif %} />
+        <span class="text-2xl p-2 rounded-xl border-2 transition-colors
+                     {% if entry and entry.mood == mood %}border-brand bg-brand/10{% else %}border-slate-700 hover:border-slate-500{% endif %}"
+              onclick="this.parentElement.querySelector('input').checked=true; selectMood('{{ mood }}', this)">
+          {{ emoji }}
+        </span>
+        <span class="text-xs text-slate-500">{{ label }}</span>
+      </label>
+      {% endfor %}
+    </div>
+  </div>
+
+  <!-- Text area -->
+  <div class="mb-5">
+    <p class="text-slate-400 text-sm mb-2">Notes (Markdown supported)</p>
+    <textarea name="body" rows="14"
+              class="w-full bg-slate-900 border border-slate-600 rounded-lg p-4 text-sm text-slate-200
+                     focus:outline-none focus:border-brand resize-y font-mono">{{ entry.body if entry else "" }}</textarea>
+  </div>
+
+  <button type="submit"
+          class="bg-brand hover:bg-brand-dark text-white px-6 py-2.5 rounded-lg font-medium transition-colors">
+    Save Entry
+  </button>
+</form>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function selectMood(mood, el) {
+  document.querySelectorAll("input[name=mood]").forEach(i => {
+    const span = i.parentElement.querySelector("span.text-2xl");
+    span.classList.remove("border-brand", "bg-brand/10");
+    span.classList.add("border-slate-700");
+  });
+  el.classList.remove("border-slate-700");
+  el.classList.add("border-brand", "bg-brand/10");
+}
+</script>
+{% endblock %}

@@ -1,0 +1,24 @@
+[Unit]
+Description=Tradelog Flask App
+After=network.target
+
+[Service]
+User=pi
+Group=www-data
+WorkingDirectory=/opt/tradelog
+Environment="PATH=/opt/tradelog/venv/bin"
+EnvironmentFile=/opt/tradelog/.env
+ExecStart=/opt/tradelog/venv/bin/gunicorn \
+    --workers 2 \
+    --bind unix:/run/tradelog/app.sock \
+    --umask 007 \
+    --timeout 60 \
+    wsgi:app
+ExecStartPre=/bin/mkdir -p /run/tradelog
+ExecStartPre=/bin/chown pi:www-data /run/tradelog
+RuntimeDirectory=tradelog
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

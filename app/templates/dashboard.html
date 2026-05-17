@@ -1,0 +1,128 @@
+{% extends "base.html" %}
+{% block title %}Dashboard — Tradelog{% endblock %}
+
+{% block content %}
+<div class="flex items-center justify-between mb-6">
+  <h1 class="text-2xl font-bold text-white">Dashboard</h1>
+  <div class="flex gap-2">
+    {% for d in [7, 30, 90] %}
+    <a href="?days={{ d }}"
+       class="px-3 py-1.5 rounded-lg text-sm font-medium transition-colors
+              {% if days == d %}bg-brand text-white{% else %}bg-slate-700 text-slate-300 hover:bg-slate-600{% endif %}">
+      {{ d }}d
+    </a>
+    {% endfor %}
+  </div>
+</div>
+
+<!-- Metric cards -->
+<div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+  {% set m = metrics %}
+
+  <div class="card">
+    <p class="text-slate-400 text-xs uppercase tracking-wide mb-1">Net P&amp;L</p>
+    <p class="text-2xl font-bold {% if m.net_pnl >= 0 %}gain{% else %}loss{% endif %}">
+      ${{ "%.2f"|format(m.net_pnl) }}
+    </p>
+  </div>
+
+  <div class="card">
+    <p class="text-slate-400 text-xs uppercase tracking-wide mb-1">Win Rate</p>
+    <p class="text-2xl font-bold text-white">{{ m.win_rate }}%</p>
+    <p class="text-slate-500 text-xs">{{ m.total_trades }} trades</p>
+  </div>
+
+  <div class="card">
+    <p class="text-slate-400 text-xs uppercase tracking-wide mb-1">Profit Factor</p>
+    <p class="text-2xl font-bold text-white">
+      {% if m.profit_factor %}{{ "%.2f"|format(m.profit_factor) }}{% else %}—{% endif %}
+    </p>
+  </div>
+
+  <div class="card">
+    <p class="text-slate-400 text-xs uppercase tracking-wide mb-1">Expectancy</p>
+    <p class="text-2xl font-bold {% if m.expectancy >= 0 %}gain{% else %}loss{% endif %}">
+      ${{ "%.2f"|format(m.expectancy) }}
+    </p>
+  </div>
+
+  <div class="card">
+    <p class="text-slate-400 text-xs uppercase tracking-wide mb-1">Avg Winner</p>
+    <p class="text-2xl font-bold gain">${{ "%.2f"|format(m.avg_winner) }}</p>
+  </div>
+
+  <div class="card">
+    <p class="text-slate-400 text-xs uppercase tracking-wide mb-1">Avg Loser</p>
+    <p class="text-2xl font-bold loss">${{ "%.2f"|format(m.avg_loser) }}</p>
+  </div>
+
+  <div class="card">
+    <p class="text-slate-400 text-xs uppercase tracking-wide mb-1">Max Drawdown</p>
+    <p class="text-2xl font-bold loss">${{ "%.2f"|format(m.max_drawdown) }}</p>
+  </div>
+
+  <div class="card">
+    <p class="text-slate-400 text-xs uppercase tracking-wide mb-1">Total Trades</p>
+    <p class="text-2xl font-bold text-white">{{ m.total_trades }}</p>
+  </div>
+</div>
+
+<!-- Charts row -->
+<div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+  <div class="card">
+    <p class="text-slate-300 font-semibold mb-4">Equity Curve</p>
+    <canvas id="equityChart" height="180"></canvas>
+  </div>
+  <div class="card">
+    <p class="text-slate-300 font-semibold mb-4">Daily P&amp;L</p>
+    <canvas id="pnlChart" height="180"></canvas>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const equity = {{ metrics.equity_curve | tojson }};
+const pnlData = {{ metrics.pnl_by_day | tojson }};
+
+const chartDefaults = {
+  responsive: true,
+  plugins: { legend: { display: false } },
+  scales: {
+    x: { ticks: { color: "#94a3b8", maxTicksLimit: 6 }, grid: { color: "#1e293b" } },
+    y: { ticks: { color: "#94a3b8" }, grid: { color: "#1e293b" } }
+  }
+};
+
+// Equity curve
+new Chart(document.getElementById("equityChart"), {
+  type: "line",
+  data: {
+    labels: equity.map(d => d.date),
+    datasets: [{
+      data: equity.map(d => d.equity),
+      borderColor: "#0ea5e9",
+      backgroundColor: "rgba(14,165,233,0.1)",
+      fill: true,
+      tension: 0.3,
+      pointRadius: 2,
+    }]
+  },
+  options: chartDefaults
+});
+
+// Daily P&L bar
+new Chart(document.getElementById("pnlChart"), {
+  type: "bar",
+  data: {
+    labels: pnlData.map(d => d.date),
+    datasets: [{
+      data: pnlData.map(d => d.pnl),
+      backgroundColor: pnlData.map(d => d.pnl >= 0 ? "rgba(34,197,94,0.7)" : "rgba(239,68,68,0.7)"),
+      borderRadius: 4,
+    }]
+  },
+  options: chartDefaults
+});
+</script>
+{% endblock %}

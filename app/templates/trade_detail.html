@@ -1,0 +1,145 @@
+{% extends "base.html" %}
+{% block title %}{{ trade.symbol }} — Tradelog{% endblock %}
+
+{% block content %}
+<div class="flex items-center gap-3 mb-6">
+  <a href="/tradelog/trades" class="text-slate-400 hover:text-white text-sm">← Trades</a>
+  <h1 class="text-2xl font-bold text-white">{{ trade.symbol }}</h1>
+  <span class="px-3 py-1 rounded-full text-sm font-medium
+               {% if trade.side == 'LONG' %}bg-green-900/60 text-green-400{% else %}bg-red-900/60 text-red-400{% endif %}">
+    {{ trade.side }}
+  </span>
+  {% if trade.is_open %}
+  <span class="px-3 py-1 rounded-full bg-yellow-900/60 text-yellow-400 text-sm">Open</span>
+  {% endif %}
+</div>
+
+<!-- Trade details grid -->
+<div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+  <div class="card">
+    <p class="text-slate-400 text-xs uppercase tracking-wide mb-1">Net P&amp;L</p>
+    <p class="text-2xl font-bold {% if trade.net_pnl and trade.net_pnl >= 0 %}gain{% else %}loss{% endif %}">
+      {% if trade.net_pnl is not none %}${{ "%.2f"|format(trade.net_pnl) }}{% else %}—{% endif %}
+    </p>
+  </div>
+  <div class="card">
+    <p class="text-slate-400 text-xs uppercase tracking-wide mb-1">Entry</p>
+    <p class="text-xl font-bold text-white">${{ "%.4f"|format(trade.entry_price) }}</p>
+    <p class="text-slate-500 text-xs">{{ trade.entry_time.strftime("%Y-%m-%d %H:%M:%S") }}</p>
+  </div>
+  <div class="card">
+    <p class="text-slate-400 text-xs uppercase tracking-wide mb-1">Exit</p>
+    <p class="text-xl font-bold text-white">
+      {% if trade.exit_price %}${{ "%.4f"|format(trade.exit_price) }}{% else %}—{% endif %}
+    </p>
+    <p class="text-slate-500 text-xs">
+      {% if trade.exit_time %}{{ trade.exit_time.strftime("%Y-%m-%d %H:%M:%S") }}{% endif %}
+    </p>
+  </div>
+  <div class="card">
+    <p class="text-slate-400 text-xs uppercase tracking-wide mb-1">Details</p>
+    <p class="text-white text-sm">Qty: <span class="font-semibold">{{ trade.quantity }}</span></p>
+    <p class="text-white text-sm">Duration: <span class="font-semibold">
+      {% if trade.duration_minutes %}{{ trade.duration_minutes }}m{% else %}—{% endif %}
+    </span></p>
+    <p class="text-slate-500 text-sm">Commission: ${{ "%.2f"|format(trade.commission) }}</p>
+  </div>
+</div>
+
+<!-- TradingView chart -->
+<div class="card mb-6">
+  <div class="flex items-center justify-between mb-4">
+    <p class="text-slate-300 font-semibold">1-Minute Chart</p>
+    <button id="loadChart"
+            class="bg-brand hover:bg-brand-dark text-white px-3 py-1.5 rounded-lg text-sm font-medium transition-colors">
+      Load Chart
+    </button>
+  </div>
+  <div id="chartContainer" class="w-full" style="height: 400px; display: none;"></div>
+  <p id="chartMsg" class="text-slate-500 text-sm text-center py-8">
+    Click "Load Chart" to fetch 1-min candles for this trade.
+  </p>
+</div>
+
+<!-- Notes -->
+<div class="card">
+  <p class="text-slate-300 font-semibold mb-3">Notes</p>
+  <textarea id="notesArea" rows="5"
+            class="w-full bg-slate-900 border border-slate-600 rounded-lg p-3 text-sm text-slate-200
+                   focus:outline-none focus:border-brand resize-none">{{ trade.notes or "" }}</textarea>
+  <button id="saveNotes"
+          class="mt-3 bg-slate-700 hover:bg-slate-600 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors">
+    Save Notes
+  </button>
+  <span id="saveStatus" class="ml-3 text-xs text-slate-500"></span>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Load TradingView chart on demand
+document.getElementById("loadChart").addEventListener("click", async () => {
+  const btn = document.getElementById("loadChart");
+  const msg = document.getElementById("chartMsg");
+  const container = document.getElementById("chartContainer");
+
+  btn.textContent = "Loading…";
+  btn.disabled = true;
+
+  try {
+    const resp = await fetch("/tradelog/trades/{{ trade.id }}/chart");
+    const data = await resp.json();
+
+    if (data.error || !data.candles || !data.candles.length) {
+      msg.textContent = data.error || "No chart data available for this trade date.";
+      return;
+    }
+
+    container.style.display = "block";
+    msg.style.display = "none";
+    btn.style.display = "none";
+
+    const chart = LightweightCharts.createChart(container, {
+      width:  container.clientWidth,
+      height: 400,
+      layout: { background: { color: "#0f172a" }, textColor: "#94a3b8" },
+      grid:   { vertLines: { color: "#1e293b" }, horzLines: { color: "#1e293b" } },
+      crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
+      rightPriceScale: { borderColor: "#334155" },
+      timeScale: { borderColor: "#334155", timeVisible: true, secondsVisible: false },
+    });
+
+    const candleSeries = chart.addCandlestickSeries({
+      upColor:   "#22c55e", downColor: "#ef4444",
+      borderUpColor: "#22c55e", borderDownColor: "#ef4444",
+      wickUpColor:   "#22c55e", wickDownColor:   "#ef4444",
+    });
+
+    candleSeries.setData(data.candles);
+    candleSeries.setMarkers(data.markers);
+    chart.timeScale().fitContent();
+
+    window.addEventListener("resize", () => {
+      chart.applyOptions({ width: container.clientWidth });
+    });
+
+  } catch (e) {
+    msg.textContent = "Failed to load chart: " + e.message;
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+// Save notes
+document.getElementById("saveNotes").addEventListener("click", async () => {
+  const notes = document.getElementById("notesArea").value;
+  const status = document.getElementById("saveStatus");
+  const body = new FormData();
+  body.append("notes", notes);
+  const resp = await fetch("/tradelog/trades/{{ trade.id }}/notes", { method: "POST", body });
+  const data = await resp.json();
+  status.textContent = data.ok ? "Saved ✓" : "Error saving";
+  setTimeout(() => status.textContent = "", 3000);
+});
+</script>
+{% endblock %}

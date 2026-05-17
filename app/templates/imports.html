@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+{% block title %}Import — Tradelog{% endblock %}
+
+{% block content %}
+<h1 class="text-2xl font-bold text-white mb-6">Import Trades</h1>
+
+{% if result %}
+<div class="mb-6 p-4 rounded-xl border {% if result.ok %}border-green-700 bg-green-900/20 text-green-400{% else %}border-red-700 bg-red-900/20 text-red-400{% endif %}">
+  {% if result.ok %}
+    ✓ Import successful — {{ result.new_trades }} new trade(s) imported.
+  {% else %}
+    ✗ {{ result.message }}
+  {% endif %}
+</div>
+{% endif %}
+
+<div class="grid lg:grid-cols-2 gap-6">
+
+  <!-- IBKR Flex Sync -->
+  <div class="card">
+    <h2 class="text-white font-semibold text-lg mb-1">IBKR Flex Query Sync</h2>
+    <p class="text-slate-400 text-sm mb-4">
+      Automatically pulls trades from IBKR via the Flex Web Service.
+      Requires <code class="text-brand">FLEX_TOKEN</code> and
+      <code class="text-brand">FLEX_QUERY_ID</code> set in your <code>.env</code> file.
+    </p>
+    <form method="POST">
+      <input type="hidden" name="action" value="flex_sync" />
+      <button type="submit"
+              class="bg-brand hover:bg-brand-dark text-white px-5 py-2.5 rounded-lg font-medium transition-colors">
+        Sync Now
+      </button>
+    </form>
+    <div class="mt-4 text-slate-500 text-xs">
+      Auto-sync runs daily at {{ config.FLEX_SYNC_HOUR }}:00 via scheduler.
+    </div>
+  </div>
+
+  <!-- CSV Upload -->
+  <div class="card">
+    <h2 class="text-white font-semibold text-lg mb-1">Upload Activity Statement</h2>
+    <p class="text-slate-400 text-sm mb-4">
+      Upload a CSV activity statement exported from IBKR
+      (Account Management → Reports → Activity).
+      Select <strong>Trades</strong> section in CSV format.
+    </p>
+    <form method="POST" enctype="multipart/form-data">
+      <input type="hidden" name="action" value="file_upload" />
+      <label class="block mb-3">
+        <span class="text-slate-400 text-sm">CSV file</span>
+        <input type="file" name="file" accept=".csv,.txt"
+               class="mt-1 block w-full text-sm text-slate-400 file:mr-3 file:py-2 file:px-4
+                      file:rounded-lg file:border-0 file:bg-slate-700 file:text-white
+                      hover:file:bg-slate-600 cursor-pointer" />
+      </label>
+      <button type="submit"
+              class="bg-slate-700 hover:bg-slate-600 text-white px-5 py-2.5 rounded-lg font-medium transition-colors">
+        Upload &amp; Import
+      </button>
+    </form>
+  </div>
+
+</div>
+
+<!-- Setup instructions -->
+<div class="card mt-6">
+  <h2 class="text-white font-semibold mb-3">Setting up Flex Query in IBKR</h2>
+  <ol class="text-slate-400 text-sm space-y-2 list-decimal list-inside">
+    <li>Log in to IBKR Account Management → Reports → Flex Queries</li>
+    <li>Create a new Activity Flex Query — include the <strong>Trades</strong> section in XML format</li>
+    <li>Set date range to "Last N Days" (e.g. 7)</li>
+    <li>Save the query and note the <strong>Query ID</strong></li>
+    <li>Go to Flex Web Service → Generate Token — note the <strong>Token</strong></li>
+    <li>Add both to your <code class="text-brand">.env</code> file on the RPi</li>
+  </ol>
+</div>
+{% endblock %}
