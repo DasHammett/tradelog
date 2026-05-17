@@ -2,7 +2,6 @@
 IBKR file parser — supports:
   - TLG files  (Third-Party TradeLog, pipe-delimited, from Performance & Statements)
   - CSV Activity Statements (Trades section)
-
 Validation and duplicate detection happen BEFORE any DB writes.
 If any duplicate is found, the entire import is aborted with a full report.
 """
@@ -12,12 +11,9 @@ from datetime import datetime
 from app import db
 from app.models import Trade
 from app.services.metrics import compute_daily_summary
-
-
 # ---------------------------------------------------------------------------
 # TLG parser
 # ---------------------------------------------------------------------------
-
 # TLG pipe-delimited field positions for STK_TRD records:
 # SECTION  TYPE  | EXEC_ID | SYMBOL | DESCRIPTION | EXCHANGE | ACTION    | OPEN_CLOSE | DATE     | TIME     | CURRENCY | QTY   | MULTIPLIER | PRICE  | PROCEEDS    | PNL   | COMMISSION
 # idx:       0      1         2        3              4          5           6            7          8          9          10      11           12       13            14      15
@@ -36,73 +32,73 @@ TLG_FIELDS = {
     "pnl":        14,
     "commission": 15,
 }
-
 VALID_TLG_ACTIONS = {
     "BUYTOOPEN", "BUYTOCLOSE",
     "SELLTOOPEN", "SELLTOCLOSE",
     "BUY", "SELL",
 }
-
-
 def _parse_tlg_records(content: str):
     """
     Parse TLG file content into a list of raw record dicts.
     Returns (records, errors) where errors is a list of strings.
+    Actual file format:
+      ACCOUNT_INFORMATION          <- section header, no pipe, ignored
+      ACT_INF|U123|Name            <- account info row, ignored
+      STOCK_TRANSACTIONS           <- section header, start capturing
+      STK_TRD|exec_id|symbol|...   <- trade rows, capture these
+      CURRENCY_TRANSACTIONS        <- different section, stop capturing
+      CASH_TRD|...                 <- ignored
+      EOF
     """
-    records = []
-    errors = []
-    lines = content.splitlines()
-
-    for lineno, line in enumerate(lines, 1):
+    records         = []
+    errors          = []
+    in_stock_section = False
+    for lineno, line in enumerate(content.splitlines(), 1):
         line = line.strip()
-        if not line:
+        if not line or line == "EOF":
             continue
-
-        # TLG lines start with "STOCK_TRANSACTIONS " then the pipe data
-        if not line.startswith("STOCK_TRANSACTIONS"):
+        # Lines without a pipe are section headers — use them to track position
+        if "|" not in line:
+            in_stock_section = (line == "STOCK_TRANSACTIONS")
             continue
-
-        # Strip the section prefix and split on pipes
-        pipe_part = line.split(" ", 1)[1] if " " in line else line
-        parts = pipe_part.split("|")
-
-        record_type = parts[0].strip() if parts else ""
+        # Skip everything outside STOCK_TRANSACTIONS
+        if not in_stock_section:
+            continue
+        parts       = line.split("|")
+        record_type = parts[0].strip()
+        # Only process STK_TRD rows; skip STK_DIV, STK_OPT, etc.
         if record_type != "STK_TRD":
-            continue  # skip non-trade records (e.g. STK_DIV, OPT_TRD)
-
-        # Validate field count
-        if len(parts) < 16:
-            errors.append(f"Line {lineno}: expected 16+ fields, got {len(parts)} — skipping")
             continue
-
+        if len(parts) < 15:
+            errors.append(f"Line {lineno}: expected 15+ fields, got {len(parts)} — skipping")
+            continue
         try:
-            action = parts[TLG_FIELDS["action"]].strip().upper()
-            if action not in VALID_TLG_ACTIONS:
-                errors.append(f"Line {lineno}: unknown action '{action}' — skipping")
-                continue
-
-            date_str = parts[TLG_FIELDS["date"]].strip()
-            time_str = parts[TLG_FIELDS["time"]].strip()
-            entry_time = datetime.strptime(f"{date_str} {time_str}", "%Y%m%d %H:%M:%S")
-
-            qty       = float(parts[TLG_FIELDS["quantity"]].strip() or 0)
-            price     = float(parts[TLG_FIELDS["price"]].strip() or 0)
-            pnl       = float(parts[TLG_FIELDS["pnl"]].strip() or 0)
-            commish   = abs(float(parts[TLG_FIELDS["commission"]].strip() or 0))
-            symbol    = parts[TLG_FIELDS["symbol"]].strip()
-            exec_id   = parts[TLG_FIELDS["exec_id"]].strip()
-            currency  = parts[TLG_FIELDS["currency"]].strip() or "USD"
-
+            exec_id     = parts[TLG_FIELDS["exec_id"]].strip()
+            symbol      = parts[TLG_FIELDS["symbol"]].strip()
+            action      = parts[TLG_FIELDS["action"]].strip().upper()
+            date_str    = parts[TLG_FIELDS["date"]].strip()
+            time_str    = parts[TLG_FIELDS["time"]].strip()
+            currency    = parts[TLG_FIELDS["currency"]].strip() or "USD"
+            qty_raw     = parts[TLG_FIELDS["quantity"]].strip()
+            price_raw   = parts[TLG_FIELDS["price"]].strip()
+            pnl_raw     = parts[TLG_FIELDS["pnl"]].strip()
+            commish_raw = parts[TLG_FIELDS["commission"]].strip() if len(parts) > TLG_FIELDS["commission"] else ""
             if not symbol:
                 errors.append(f"Line {lineno}: missing symbol — skipping")
                 continue
-            if price <= 0:
-                errors.append(f"Line {lineno}: invalid price {price} for {symbol} — skipping")
+            if action not in VALID_TLG_ACTIONS:
+                errors.append(f"Line {lineno}: unknown action '{action}' for {symbol} — skipping")
                 continue
-
+            entry_time = datetime.strptime(f"{date_str} {time_str}", "%Y%m%d %H:%M:%S")
+            qty        = float(qty_raw    or 0)
+            price      = float(price_raw  or 0)
+            pnl        = float(pnl_raw    or 0)
+            commish    = abs(float(commish_raw or 0))
+            if price <= 0:
+                errors.append(f"Line {lineno}: invalid price '{price_raw}' for {symbol} — skipping")
+                continue
             is_buy = action in ("BUYTOOPEN", "BUYTOCLOSE", "BUY")
             side   = "LONG" if is_buy else "SHORT"
-
             records.append({
                 "ibkr_trade_id": f"TLG-{exec_id}-{date_str}-{time_str}",
                 "symbol":        symbol,
@@ -117,18 +113,13 @@ def _parse_tlg_records(content: str):
                 "net_pnl":       round(pnl - commish, 2),
                 "is_open":       (pnl == 0),
             })
-
         except (ValueError, IndexError) as e:
             errors.append(f"Line {lineno}: parse error — {e}")
             continue
-
     return records, errors
-
-
 # ---------------------------------------------------------------------------
 # CSV Activity Statement parser
 # ---------------------------------------------------------------------------
-
 def _parse_csv_records(content: str):
     """
     Parse IBKR CSV Activity Statement (Trades section).
@@ -138,7 +129,6 @@ def _parse_csv_records(content: str):
     errors = []
     reader = csv.reader(io.StringIO(content))
     headers = None
-
     for lineno, row in enumerate(reader, 1):
         if not row:
             continue
@@ -149,12 +139,10 @@ def _parse_csv_records(content: str):
             continue
         if row[0] != "Trades" or row[1] != "Data" or row[2] != "Order":
             continue
-
         data = dict(zip(headers, row))
         symbol = data.get("Symbol", "").strip()
         if not symbol:
             continue
-
         dt_str = data.get("Date/Time", "").strip()
         try:
             entry_time = datetime.strptime(dt_str, "%Y-%m-%d, %H:%M:%S")
@@ -164,7 +152,6 @@ def _parse_csv_records(content: str):
             except ValueError:
                 errors.append(f"Row {lineno}: unparseable date '{dt_str}' for {symbol}")
                 continue
-
         try:
             qty      = float(data.get("Quantity", 0) or 0)
             price    = float(data.get("T. Price", 0) or 0)
@@ -173,14 +160,11 @@ def _parse_csv_records(content: str):
         except ValueError as e:
             errors.append(f"Row {lineno}: numeric parse error — {e}")
             continue
-
         if price <= 0:
             errors.append(f"Row {lineno}: invalid price {price} for {symbol} — skipping")
             continue
-
         pseudo_id = f"CSV-{symbol}-{dt_str}-{qty}-{price}"
         side      = "LONG" if qty > 0 else "SHORT"
-
         records.append({
             "ibkr_trade_id": pseudo_id,
             "symbol":        symbol,
@@ -195,14 +179,10 @@ def _parse_csv_records(content: str):
             "net_pnl":       round(realized - commish, 2),
             "is_open":       (realized == 0),
         })
-
     return records, errors
-
-
 # ---------------------------------------------------------------------------
 # Shared: validate + write
 # ---------------------------------------------------------------------------
-
 def _check_duplicates(records):
     """
     Check every record against the DB.
@@ -213,8 +193,6 @@ def _check_duplicates(records):
         if Trade.query.filter_by(ibkr_trade_id=r["ibkr_trade_id"]).first():
             duplicates.append(r["ibkr_trade_id"])
     return duplicates
-
-
 def _write_records(records):
     """Write validated, de-duped records to DB. Returns count."""
     affected_dates = set()
@@ -226,18 +204,14 @@ def _write_records(records):
     for d in affected_dates:
         compute_daily_summary(d)
     return len(records)
-
-
 def import_file(content: str, filename: str) -> dict:
     """
     Main entry point. Auto-detects TLG vs CSV, validates, checks duplicates,
     and only writes to DB if everything is clean.
-
     Returns a result dict with keys:
       ok, new_trades, warnings, duplicates, errors, file_type
     """
     filename_lower = filename.lower()
-
     # --- Detect file type ---
     if filename_lower.endswith(".tlg"):
         file_type = "TLG"
@@ -247,13 +221,13 @@ def import_file(content: str, filename: str) -> dict:
         records, parse_errors = _parse_csv_records(content)
     else:
         # Try TLG first (pipe format), fall back to CSV
-        if "STOCK_TRANSACTIONS" in content[:500]:
+        # Try TLG first by checking for STK_TRD data rows or section header
+        if "STK_TRD|" in content or "STOCK_TRANSACTIONS" in content:
             file_type = "TLG"
             records, parse_errors = _parse_tlg_records(content)
         else:
             file_type = "CSV"
             records, parse_errors = _parse_csv_records(content)
-
     # --- Validation: must have parsed at least one record ---
     if not records and not parse_errors:
         return {
@@ -265,7 +239,6 @@ def import_file(content: str, filename: str) -> dict:
             "duplicates": [],
             "warnings": [],
         }
-
     if not records:
         return {
             "ok": False,
@@ -275,7 +248,6 @@ def import_file(content: str, filename: str) -> dict:
             "duplicates": [],
             "warnings": [],
         }
-
     # --- Duplicate check (dry run — no DB writes yet) ---
     duplicates = _check_duplicates(records)
     if duplicates:
@@ -288,7 +260,6 @@ def import_file(content: str, filename: str) -> dict:
             "warnings": [],
             "parsed_count": len(records),
         }
-
     # --- All good — write to DB ---
     try:
         count = _write_records(records)
@@ -310,8 +281,6 @@ def import_file(content: str, filename: str) -> dict:
             "duplicates": [],
             "warnings": [],
         }
-
-
 # Keep old name as alias for the CSV-only path used by Flex importer
 def parse_activity_csv(file_content: str) -> dict:
     return import_file(file_content, "upload.csv")
