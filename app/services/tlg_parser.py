@@ -253,32 +253,135 @@ def _recompute_ods(affected: list):
 
 
 # ---------------------------------------------------------------------------
-# Step 6 — Recompute DailySummary from ODS
+# Step 6 — FIFO avg-cost matching → rt_trades
+# ---------------------------------------------------------------------------
+
+def _compute_rt_trades(affected: list, warnings: list):
+    """
+    For each (date, symbol) pair, pull STG rows sorted by time and apply
+    avg-cost FIFO matching:
+      - BUY  → update running avg cost of open position
+      - SELL → emit one RtTrade row at current avg cost; warn if no open position
+    Deletes existing rt_trades for the affected pairs before recomputing.
+    """
+    for trade_date, symbol in affected:
+        # Delete existing rt_trades for this date+symbol
+        RtTrade.query.filter_by(date=trade_date, symbol=symbol).delete()
+
+        execs = StgExecution.query\
+            .filter_by(date=trade_date, symbol=symbol)\
+            .order_by(StgExecution.time.asc()).all()
+
+        pos_qty        = 0.0   # current open position size
+        pos_avg_cost   = 0.0   # weighted avg cost of open position
+        pos_commission = 0.0   # accumulated buy-side commissions for open position
+        pos_entry_time = None  # time of first BUY that opened the current position
+
+        for ex in execs:
+            exec_dt = datetime.combine(trade_date, ex.time)
+
+            if ex.side == "BUY":
+                # Update weighted avg cost
+                total_cost     = pos_avg_cost * pos_qty + ex.price * ex.quantity
+                pos_qty       += ex.quantity
+                pos_avg_cost   = total_cost / pos_qty
+                pos_commission += ex.commission
+                if pos_entry_time is None:
+                    pos_entry_time = exec_dt   # first buy opens the position
+
+            elif ex.side == "SELL":
+                if pos_qty <= 0:
+                    warnings.append(
+                        f"Orphaned SELL {ex.quantity} {symbol} @ {ex.price} "
+                        f"at {ex.time} — no open position, skipped"
+                    )
+                    continue
+
+                sell_qty = min(ex.quantity, pos_qty)   # can't sell more than held
+
+                # Proportional buy-side commission for this sell
+                buy_commission_portion = pos_commission * (sell_qty / pos_qty)
+
+                gross_pnl = round((ex.price - pos_avg_cost) * sell_qty, 6)
+                total_commission = round(buy_commission_portion + ex.commission, 6)
+                net_pnl   = round(gross_pnl - total_commission, 6)
+
+                rt = RtTrade(
+                    date         = trade_date,
+                    symbol       = symbol,
+                    entry_time   = pos_entry_time,
+                    exit_time    = exec_dt,
+                    quantity     = sell_qty,
+                    entry_price  = round(pos_avg_cost, 6),
+                    exit_price   = round(ex.price, 6),
+                    commission   = total_commission,
+                    gross_pnl    = round(gross_pnl, 2),
+                    net_pnl      = round(net_pnl, 2),
+                    is_open      = False,
+                )
+                db.session.add(rt)
+
+                # Reduce open position
+                pos_qty        -= sell_qty
+                pos_commission -= buy_commission_portion
+
+                if pos_qty <= 0.0001:   # fully closed — reset
+                    pos_qty        = 0.0
+                    pos_avg_cost   = 0.0
+                    pos_commission = 0.0
+                    pos_entry_time = None
+                # If partial close, avg cost stays the same (only qty reduces)
+
+        # Any remaining open position (shouldn't happen for day trader, but handle it)
+        if pos_qty > 0.0001:
+            rt = RtTrade(
+                date         = trade_date,
+                symbol       = symbol,
+                entry_time   = pos_entry_time,
+                exit_time    = datetime.combine(trade_date, execs[-1].time),
+                quantity     = pos_qty,
+                entry_price  = round(pos_avg_cost, 6),
+                exit_price   = None,
+                commission   = round(pos_commission, 6),
+                gross_pnl    = 0.0,
+                net_pnl      = 0.0,
+                is_open      = True,
+            )
+            db.session.add(rt)
+            warnings.append(f"Open position {pos_qty} {symbol} on {trade_date} — no matching SELL found")
+
+    db.session.commit()
+
+
+# ---------------------------------------------------------------------------
+# Step 7 — Recompute DailySummary from rt_trades
 # ---------------------------------------------------------------------------
 
 def _recompute_daily_summary(affected_dates: set):
     for trade_date in affected_dates:
+        rt_rows = RtTrade.query.filter_by(date=trade_date, is_open=False).all()
         ods_rows = OdsDailySymbol.query.filter_by(date=trade_date).all()
-        if not ods_rows:
+
+        if not rt_rows and not ods_rows:
             continue
 
-        winners = [r for r in ods_rows if r.net_pnl > 0]
-        losers  = [r for r in ods_rows if r.net_pnl < 0]
+        winners = [r for r in rt_rows if r.net_pnl > 0]
+        losers  = [r for r in rt_rows if r.net_pnl < 0]
 
         summary = DailySummary.query.filter_by(date=trade_date).first()
         if not summary:
             summary = DailySummary(date=trade_date)
             db.session.add(summary)
 
-        summary.total_symbols   = len(ods_rows)
-        summary.winning_symbols = len(winners)
-        summary.losing_symbols  = len(losers)
-        summary.gross_pnl       = round(sum(r.gross_pnl for r in ods_rows), 2)
-        summary.net_pnl         = round(sum(r.net_pnl   for r in ods_rows), 2)
-        summary.total_commission= round(sum(r.total_commission for r in ods_rows), 2)
-        summary.win_rate        = round(len(winners) / len(ods_rows) * 100, 1)
-        summary.avg_winner      = round(sum(r.net_pnl for r in winners) / len(winners), 2) if winners else 0.0
-        summary.avg_loser       = round(sum(r.net_pnl for r in losers)  / len(losers),  2) if losers  else 0.0
+        summary.total_trades     = len(rt_rows)
+        summary.winning_trades   = len(winners)
+        summary.losing_trades    = len(losers)
+        summary.gross_pnl        = round(sum(r.gross_pnl for r in rt_rows), 2)
+        summary.net_pnl          = round(sum(r.net_pnl   for r in rt_rows), 2)
+        summary.total_commission = round(sum(r.commission for r in rt_rows), 2)
+        summary.win_rate         = round(len(winners) / len(rt_rows) * 100, 1) if rt_rows else 0.0
+        summary.avg_winner       = round(sum(r.net_pnl for r in winners) / len(winners), 2) if winners else 0.0
+        summary.avg_loser        = round(sum(r.net_pnl for r in losers)  / len(losers),  2) if losers  else 0.0
 
     db.session.commit()
 
@@ -325,19 +428,21 @@ def import_file(content: str, filename: str) -> dict:
             "parsed_count": len(clean_df),
         }
 
-    # Steps 4-6 — Write
+    # Steps 4-7 — Write
     try:
         affected_pairs = list(clean_df[["date", "symbol"]].drop_duplicates().itertuples(index=False, name=None))
         affected_dates = {d for d, _ in affected_pairs}
+        rt_warnings    = []
 
         _write_stg(clean_df)
         _recompute_ods(affected_pairs)
+        _compute_rt_trades(affected_pairs, rt_warnings)
         _recompute_daily_summary(affected_dates)
 
         return {
             "ok":        True,
             "new_rows":  len(clean_df),
-            "warnings":  all_errors,
+            "warnings":  all_errors + rt_warnings,
             "errors":    [],
             "duplicates":[],
         }

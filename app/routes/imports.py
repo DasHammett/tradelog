@@ -1,5 +1,5 @@
 from flask import Blueprint, render_template, request
-from app.services.tlg_parser import import_file, _recompute_ods, _recompute_daily_summary
+from app.services.tlg_parser import import_file, _recompute_ods, _recompute_daily_summary, _compute_rt_trades
 from app.services.flex_query import sync_flex
 from app.models import StgExecution
 from app import db
@@ -21,17 +21,18 @@ def import_page():
 
         elif action == "recompute_ods":
             try:
-                # Get all distinct date+symbol pairs from STG
                 pairs = db.session.query(StgExecution.date, StgExecution.symbol)\
                                   .distinct().all()
                 affected_dates = {d for d, _ in pairs}
+                rt_warnings    = []
                 _recompute_ods(pairs)
+                _compute_rt_trades(pairs, rt_warnings)
                 _recompute_daily_summary(affected_dates)
                 result = {
-                    "ok": True,
-                    "new_rows": len(pairs),
-                    "message": f"ODS recomputed for {len(pairs)} date+symbol combination(s).",
-                    "warnings": [], "errors": [], "duplicates": [],
+                    "ok":      True,
+                    "message": f"ODS + RT trades recomputed for {len(pairs)} date+symbol combination(s)."
+                               + (f" {len(rt_warnings)} warning(s)." if rt_warnings else ""),
+                    "warnings": rt_warnings, "errors": [], "duplicates": [],
                 }
             except Exception as e:
                 db.session.rollback()
