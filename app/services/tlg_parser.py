@@ -6,14 +6,15 @@ Step 2 — Validate:  Check field integrity before touching the DB
 Step 3 — Dedup:     Check exec_ids against stg_executions — abort if any duplicate
 Step 4 — Write STG: Insert new raw execution rows
 Step 5 — Write ODS: Recompute ods_daily_symbol for affected date+symbol combos
-Step 6 — Write DWH: Recompute daily_summary for affected dates
+Step 6 — Compute RT: FIFO avg-cost matching → rt_trades
+Step 7 — Write DWH: Recompute daily_summary from rt_trades
 """
 
 import io
 import pandas as pd
 from datetime import datetime, date
 from app import db
-from app.models import StgExecution, OdsDailySymbol, DailySummary
+from app.models import StgExecution, OdsDailySymbol, DailySummary, RtTrade
 
 # ---------------------------------------------------------------------------
 # Constants
