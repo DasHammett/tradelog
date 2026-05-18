@@ -28,6 +28,41 @@ class StgExecution(db.Model):
 
 
 # ---------------------------------------------------------------------------
+# RT_TRADES — Round-trip trades, one row per SELL execution (FIFO avg cost)
+# Computed from STG. Join to ODS/STG on date + symbol.
+# ---------------------------------------------------------------------------
+
+class RtTrade(db.Model):
+    __tablename__ = "rt_trades"
+
+    id           = db.Column(db.Integer, primary_key=True)
+    date         = db.Column(db.Date,     nullable=False, index=True)
+    symbol       = db.Column(db.String(20), nullable=False, index=True)
+    entry_time   = db.Column(db.DateTime, nullable=True)   # time of first BUY that opened this position lot
+    exit_time    = db.Column(db.DateTime, nullable=False)  # time of this SELL
+    quantity     = db.Column(db.Float,    nullable=False)  # shares in this round-trip
+    entry_price  = db.Column(db.Float,    nullable=False)  # weighted avg cost at time of sell
+    exit_price   = db.Column(db.Float,    nullable=False)  # sell price
+    commission   = db.Column(db.Float,    default=0.0)     # sum of buy + sell commissions for this rt
+    gross_pnl    = db.Column(db.Float,    nullable=False)  # (exit - entry) * qty
+    net_pnl      = db.Column(db.Float,    nullable=False)  # gross_pnl - commission
+    is_open      = db.Column(db.Boolean,  default=False)   # True if BUY with no matching SELL yet
+
+    __table_args__ = (
+        db.UniqueConstraint("date", "symbol", "exit_time", name="uq_rt_date_symbol_exit"),
+    )
+
+    @property
+    def duration_minutes(self):
+        if self.entry_time and self.exit_time:
+            return round((self.exit_time - self.entry_time).total_seconds() / 60, 1)
+        return None
+
+    def __repr__(self):
+        return f"<RtTrade {self.symbol} {self.date} net={self.net_pnl}>"
+
+
+# ---------------------------------------------------------------------------
 # ODS — Daily aggregated per symbol, computed from STG via Pandas
 # ---------------------------------------------------------------------------
 
@@ -58,7 +93,7 @@ class OdsDailySymbol(db.Model):
 
 
 # ---------------------------------------------------------------------------
-# DailySummary — Aggregated per day, computed from ODS, drives dashboard
+# DailySummary — Aggregated per day, computed from rt_trades, drives dashboard
 # ---------------------------------------------------------------------------
 
 class DailySummary(db.Model):
@@ -66,9 +101,9 @@ class DailySummary(db.Model):
 
     id               = db.Column(db.Integer, primary_key=True)
     date             = db.Column(db.Date, nullable=False, unique=True)
-    total_symbols    = db.Column(db.Integer, default=0)
-    winning_symbols  = db.Column(db.Integer, default=0)
-    losing_symbols   = db.Column(db.Integer, default=0)
+    total_trades     = db.Column(db.Integer, default=0)   # rt_trades rows (closed)
+    winning_trades   = db.Column(db.Integer, default=0)
+    losing_trades    = db.Column(db.Integer, default=0)
     gross_pnl        = db.Column(db.Float,   default=0.0)
     net_pnl          = db.Column(db.Float,   default=0.0)
     total_commission = db.Column(db.Float,   default=0.0)
