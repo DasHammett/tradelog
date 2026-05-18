@@ -34,7 +34,7 @@ ACTION_MAP = {
 COL_NAMES = [
     "record_type", "exec_id", "symbol", "description", "exchange",
     "action_raw", "open_close", "date_str", "time_str", "currency",
-    "quantity", "multiplier", "price", "proceeds", "pnl_raw", "commission"
+    "quantity", "multiplier", "price", "proceeds", "commission", "extra"
 ]
 
 
@@ -136,7 +136,7 @@ def _validate_and_clean(df: pd.DataFrame):
             errors.append(f"Non-numeric qty/price for {row.symbol} at {row.date_str} — skipped")
     df = df[~bad_num].copy()
 
-    # Absolute values — qty is negative for sells in TLG
+    # qty is negative for sells in TLG; commission is negative (cost) — take abs of both
     df["quantity"]   = df["quantity"].abs()
     df["commission"] = df["commission"].abs().fillna(0.0)
 
@@ -156,7 +156,6 @@ def _validate_and_clean(df: pd.DataFrame):
     # Keep only needed columns
     df = df[["exec_id", "symbol", "date", "time", "action_raw", "side",
              "quantity", "price", "commission", "currency", "raw_line"]].copy()
-
     return df, errors
 
 
