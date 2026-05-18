@@ -3,19 +3,15 @@ Dashboard metrics
 =================
 Trade-level metrics (win rate, avg winner/loser, hold time, by-price, by-hour, by-dow)
   → sourced from rt_trades (FIFO matched round-trips)
-
 Day-level metrics (equity curve, drawdown, daily P&L)
   → sourced from daily_summary (pre-aggregated from rt_trades)
-
 Totals (net P&L, commissions)
   → sourced from daily_summary
 """
-from app.models import RtTrade, DailySummary, OdsDailySymbol
+from app.models import RtTrade, DailySummary, OdsDailySymbol, StgExecution
 from app import db
 from datetime import date, timedelta, datetime
 from collections import defaultdict
-
-
 PRICE_BUCKETS = [
     ("< $2",         0,    2),
     ("$2 - $4.99",   2,    5),
@@ -26,10 +22,7 @@ PRICE_BUCKETS = [
     ("$100 - $199",  100, 200),
     ("> $200",       200, float("inf")),
 ]
-
 DOW_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
-
-
 def _bucket_pnl(rt_rows):
     buckets = {label: {"pnl": 0.0, "count": 0} for label, _, _ in PRICE_BUCKETS}
     total   = len(rt_rows)
@@ -44,8 +37,6 @@ def _bucket_pnl(rt_rows):
              "pnl":   round(buckets[label]["pnl"], 2),
              "pct":   round(buckets[label]["count"] / total * 100, 1) if total else 0}
             for label, _, _ in PRICE_BUCKETS]
-
-
 def _hour_pnl(rt_rows):
     buckets = defaultdict(lambda: {"pnl": 0.0, "count": 0})
     total   = len(rt_rows)
@@ -58,8 +49,6 @@ def _hour_pnl(rt_rows):
              "pnl":   round(buckets[h]["pnl"], 2),
              "pct":   round(buckets[h]["count"] / total * 100, 1) if total else 0}
             for h in sorted(buckets)]
-
-
 def _dow_pnl(rt_rows):
     buckets = defaultdict(lambda: {"pnl": 0.0, "count": 0})
     total   = len(rt_rows)
@@ -71,8 +60,6 @@ def _dow_pnl(rt_rows):
              "pnl":   round(buckets[i]["pnl"], 2),
              "pct":   round(buckets[i]["count"] / total * 100, 1) if total else 0}
             for i in range(7)]
-
-
 def _hold_time(rt_rows):
     win_times  = []
     loss_times = []
@@ -87,39 +74,45 @@ def _hold_time(rt_rows):
         "winners": round(sum(win_times)  / len(win_times),  1) if win_times  else 0,
         "losers":  round(sum(loss_times) / len(loss_times), 1) if loss_times else 0,
     }
-
-
 def get_dashboard_metrics(days: int = 30):
     end   = date.today()
     start = end - timedelta(days=days)
-
     summaries = DailySummary.query.filter(
         DailySummary.date >= start,
         DailySummary.date <= end
     ).order_by(DailySummary.date).all()
-
     rt_rows = RtTrade.query.filter(
         RtTrade.date >= start,
         RtTrade.date <= end,
         RtTrade.is_open == False
     ).all()
-
     winners = [r for r in rt_rows if r.net_pnl > 0]
     losers  = [r for r in rt_rows if r.net_pnl <= 0]
-
     total         = len(rt_rows)
     total_net     = sum(s.net_pnl          for s in summaries)
     total_commish = sum(s.total_commission for s in summaries)
     gross_profit  = sum(r.net_pnl for r in winners)
     gross_loss    = abs(sum(r.net_pnl for r in losers))
     profit_factor = round(gross_profit / gross_loss, 2) if gross_loss else None
-
     win_rate   = round(len(winners) / total * 100, 1) if total else 0
     avg_win    = round(gross_profit / len(winners), 2) if winners else 0
     avg_loss   = round(gross_loss   / len(losers),  2) if losers  else 0
     expectancy = round((win_rate/100 * avg_win) - ((1 - win_rate/100) * avg_loss), 2) if total else 0
-
-    # Equity curve & max drawdown from DailySummary
+    # Extra counts for Card 1
+    total_executions = StgExecution.query.filter(
+        StgExecution.date >= start,
+        StgExecution.date <= end
+    ).count()
+    trading_days     = len(summaries)
+    daily_avg_trades = round(sum(s.total_trades for s in summaries) / trading_days, 1) if trading_days else 0
+    sym_per_day = db.session.query(
+        OdsDailySymbol.date,
+        db.func.count(db.func.distinct(OdsDailySymbol.symbol)).label("n")
+    ).filter(
+        OdsDailySymbol.date >= start,
+        OdsDailySymbol.date <= end
+    ).group_by(OdsDailySymbol.date).all()
+    daily_avg_symbols = round(sum(r.n for r in sym_per_day) / len(sym_per_day), 1) if sym_per_day else 0
     equity_curve   = []
     drawdown_curve = []
     running = 0
@@ -134,18 +127,18 @@ def get_dashboard_metrics(days: int = 30):
         drawdown_curve.append({"date": s.date.isoformat(), "drawdown": round(running - peak, 2)})
         if dd > max_dd:
             max_dd = dd
-
     avg_pnl_by_day  = [{"date": s.date.isoformat(),
                          "avg_pnl": round(s.net_pnl / s.total_trades, 2) if s.total_trades else 0}
                         for s in summaries]
-
     win_rate_by_day = [{"date": s.date.isoformat(), "win_rate": s.win_rate}
                         for s in summaries]
-
     return {
         # Totals
-        "net_pnl":          round(total_net, 2),
-        "total_commissions":round(total_commish, 2),
+        "net_pnl":           round(total_net, 2),
+        "total_commissions": round(total_commish, 2),
+        "total_executions":  total_executions,
+        "daily_avg_trades":  daily_avg_trades,
+        "daily_avg_symbols": daily_avg_symbols,
         # Trade-level metrics (from rt_trades)
         "win_rate":         win_rate,
         "loss_rate":        round(100 - win_rate, 1),
