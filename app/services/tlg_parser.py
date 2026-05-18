@@ -1,289 +1,353 @@
 """
-IBKR file parser — supports:
-  - TLG files  (Third-Party TradeLog, pipe-delimited, from Performance & Statements)
-  - CSV Activity Statements (Trades section)
-Validation and duplicate detection happen BEFORE any DB writes.
-If any duplicate is found, the entire import is aborted with a full report.
+TLG Import Pipeline
+===================
+Step 1 — Parse:     Read TLG file into a Pandas DataFrame (STG shape)
+Step 2 — Validate:  Check field integrity before touching the DB
+Step 3 — Dedup:     Check exec_ids against stg_executions — abort if any duplicate
+Step 4 — Write STG: Insert new raw execution rows
+Step 5 — Write ODS: Recompute ods_daily_symbol for affected date+symbol combos
+Step 6 — Write DWH: Recompute daily_summary for affected dates
 """
-import csv
+
 import io
-from datetime import datetime
+import pandas as pd
+from datetime import datetime, date
 from app import db
-from app.models import Trade
-from app.services.metrics import compute_daily_summary
+from app.models import StgExecution, OdsDailySymbol, DailySummary
+
 # ---------------------------------------------------------------------------
-# TLG parser
+# Constants
 # ---------------------------------------------------------------------------
-# TLG pipe-delimited field positions for STK_TRD records:
-# SECTION  TYPE  | EXEC_ID | SYMBOL | DESCRIPTION | EXCHANGE | ACTION    | OPEN_CLOSE | DATE     | TIME     | CURRENCY | QTY   | MULTIPLIER | PRICE  | PROCEEDS    | PNL   | COMMISSION
-# idx:       0      1         2        3              4          5           6            7          8          9          10      11           12       13            14      15
-TLG_FIELDS = {
-    "exec_id":    1,
-    "symbol":     2,
-    "exchange":   4,
-    "action":     5,   # BUYTOOPEN, SELLTOCLOSE, SELLTOOPEN, BUYTOCLOSE, etc.
-    "open_close": 6,   # O / C
-    "date":       7,   # YYYYMMDD
-    "time":       8,   # HH:MM:SS
-    "currency":   9,
-    "quantity":   10,
-    "price":      12,
-    "proceeds":   13,
-    "pnl":        14,
-    "commission": 15,
+
+ACTION_MAP = {
+    "BUYTOOPEN":   "BUY",
+    "BUYTOCLOSE":  "BUY",
+    "BUY":         "BUY",
+    "SELLTOCLOSE": "SELL",
+    "SELLTOOPEN":  "SELL",
+    "SELL":        "SELL",
 }
-VALID_TLG_ACTIONS = {
-    "BUYTOOPEN", "BUYTOCLOSE",
-    "SELLTOOPEN", "SELLTOCLOSE",
-    "BUY", "SELL",
-}
-def _parse_tlg_records(content: str):
+
+# Field positions in a STK_TRD pipe-delimited row
+# STK_TRD | exec_id | symbol | description | exchange | action | open_close | date | time | currency | qty | multiplier | price | proceeds | pnl | commission
+#    0         1         2          3             4         5          6          7      8       9        10      11          12       13        14      15
+COL_NAMES = [
+    "record_type", "exec_id", "symbol", "description", "exchange",
+    "action_raw", "open_close", "date_str", "time_str", "currency",
+    "quantity", "multiplier", "price", "proceeds", "pnl_raw", "commission"
+]
+
+
+# ---------------------------------------------------------------------------
+# Step 1 — Parse TLG into DataFrame
+# ---------------------------------------------------------------------------
+
+def _parse_tlg_to_df(content: str):
     """
-    Parse TLG file content into a list of raw record dicts.
-    Returns (records, errors) where errors is a list of strings.
-    Actual file format:
-      ACCOUNT_INFORMATION          <- section header, no pipe, ignored
-      ACT_INF|U123|Name            <- account info row, ignored
-      STOCK_TRANSACTIONS           <- section header, start capturing
-      STK_TRD|exec_id|symbol|...   <- trade rows, capture these
-      CURRENCY_TRANSACTIONS        <- different section, stop capturing
-      CASH_TRD|...                 <- ignored
-      EOF
+    Read only STK_TRD rows from the STOCK_TRANSACTIONS section.
+    Returns a raw DataFrame with COL_NAMES columns plus 'raw_line'.
     """
-    records         = []
-    errors          = []
-    in_stock_section = False
-    for lineno, line in enumerate(content.splitlines(), 1):
-        line = line.strip().rstrip("\r")   # handle Windows CRLF and any stray CR
+    rows      = []
+    raw_lines = []
+    in_stock  = False
+
+    for line in content.splitlines():
+        line = line.strip().rstrip("\r")
         if not line or line == "EOF":
             continue
-        # Lines without a pipe are section headers — use them to track position
+
         if "|" not in line:
-            in_stock_section = (line == "STOCK_TRANSACTIONS")
+            in_stock = (line == "STOCK_TRANSACTIONS")
             continue
-        # Skip everything outside STOCK_TRANSACTIONS
-        if not in_stock_section:
+
+        if not in_stock:
             continue
-        parts       = line.split("|")
-        record_type = parts[0].strip()
-        # Only process STK_TRD rows; skip STK_DIV, STK_OPT, etc.
-        if record_type != "STK_TRD":
+
+        parts = line.split("|")
+        if parts[0].strip() != "STK_TRD":
             continue
-        if len(parts) < 15:
-            errors.append(f"Line {lineno}: expected 15+ fields, got {len(parts)} — skipping")
-            continue
-        try:
-            exec_id     = parts[TLG_FIELDS["exec_id"]].strip()
-            symbol      = parts[TLG_FIELDS["symbol"]].strip()
-            action      = parts[TLG_FIELDS["action"]].strip().upper()
-            date_str    = parts[TLG_FIELDS["date"]].strip()
-            time_str    = parts[TLG_FIELDS["time"]].strip()
-            currency    = parts[TLG_FIELDS["currency"]].strip() or "USD"
-            qty_raw     = parts[TLG_FIELDS["quantity"]].strip()
-            price_raw   = parts[TLG_FIELDS["price"]].strip()
-            pnl_raw     = parts[TLG_FIELDS["pnl"]].strip()
-            commish_raw = parts[TLG_FIELDS["commission"]].strip() if len(parts) > TLG_FIELDS["commission"] else ""
-            if not symbol:
-                errors.append(f"Line {lineno}: missing symbol — skipping")
-                continue
-            if action not in VALID_TLG_ACTIONS:
-                errors.append(f"Line {lineno}: unknown action '{action}' for {symbol} — skipping")
-                continue
-            entry_time = datetime.strptime(f"{date_str} {time_str}", "%Y%m%d %H:%M:%S")
-            qty        = float(qty_raw    or 0)
-            price      = float(price_raw  or 0)
-            pnl        = float(pnl_raw    or 0)
-            commish    = abs(float(commish_raw or 0))
-            if price <= 0:
-                errors.append(f"Line {lineno}: invalid price '{price_raw}' for {symbol} — skipping")
-                continue
-            is_buy = action in ("BUYTOOPEN", "BUYTOCLOSE", "BUY")
-            side   = "LONG" if is_buy else "SHORT"
-            records.append({
-                "ibkr_trade_id": f"TLG-{exec_id}-{date_str}-{time_str}",
-                "symbol":        symbol,
-                "asset_class":   "STK",
-                "currency":      currency,
-                "side":          side,
-                "quantity":      abs(qty),
-                "entry_price":   price,
-                "entry_time":    entry_time,
-                "commission":    commish,
-                "gross_pnl":     round(pnl, 2),
-                "net_pnl":       round(pnl - commish, 2),
-                "is_open":       (pnl == 0),
-            })
-        except (ValueError, IndexError) as e:
-            errors.append(f"Line {lineno}: parse error — {e}")
-            continue
-    return records, errors
+
+        # Pad to expected width so zip always works
+        while len(parts) < len(COL_NAMES):
+            parts.append("")
+
+        rows.append(parts[:len(COL_NAMES)])
+        raw_lines.append(line)
+
+    if not rows:
+        return None, ["No STK_TRD rows found in STOCK_TRANSACTIONS section"]
+
+    df = pd.DataFrame(rows, columns=COL_NAMES)
+    df["raw_line"] = raw_lines
+    return df, []
+
+
 # ---------------------------------------------------------------------------
-# CSV Activity Statement parser
+# Step 2 — Validate & clean
 # ---------------------------------------------------------------------------
-def _parse_csv_records(content: str):
+
+def _validate_and_clean(df: pd.DataFrame):
     """
-    Parse IBKR CSV Activity Statement (Trades section).
-    Returns (records, errors).
+    Type-cast, normalise, and validate. Returns (clean_df, errors).
+    Rows with unrecoverable errors are dropped and reported.
     """
-    records = []
     errors = []
-    reader = csv.reader(io.StringIO(content))
-    headers = None
-    for lineno, row in enumerate(reader, 1):
-        if not row:
-            continue
-        if row[0] == "Trades" and row[1] == "Header":
-            headers = row
-            continue
-        if not headers:
-            continue
-        if row[0] != "Trades" or row[1] != "Data" or row[2] != "Order":
-            continue
-        data = dict(zip(headers, row))
-        symbol = data.get("Symbol", "").strip()
-        if not symbol:
-            continue
-        dt_str = data.get("Date/Time", "").strip()
+    df = df.copy()
+
+    # Normalise strings
+    for col in ["exec_id", "symbol", "action_raw", "currency"]:
+        df[col] = df[col].str.strip()
+
+    # Filter unknown actions early
+    df["action_raw"] = df["action_raw"].str.upper()
+    unknown = df[~df["action_raw"].isin(ACTION_MAP)]
+    if not unknown.empty:
+        for _, row in unknown.iterrows():
+            errors.append(f"Unknown action '{row.action_raw}' for {row.symbol} — skipped")
+    df = df[df["action_raw"].isin(ACTION_MAP)].copy()
+
+    # Map to BUY / SELL
+    df["side"] = df["action_raw"].map(ACTION_MAP)
+
+    # Parse datetime
+    def parse_dt(row):
         try:
-            entry_time = datetime.strptime(dt_str, "%Y-%m-%d, %H:%M:%S")
+            return datetime.strptime(f"{row.date_str.strip()} {row.time_str.strip()}", "%Y%m%d %H:%M:%S")
         except ValueError:
-            try:
-                entry_time = datetime.strptime(dt_str, "%Y-%m-%d")
-            except ValueError:
-                errors.append(f"Row {lineno}: unparseable date '{dt_str}' for {symbol}")
-                continue
-        try:
-            qty      = float(data.get("Quantity", 0) or 0)
-            price    = float(data.get("T. Price", 0) or 0)
-            commish  = abs(float(data.get("Comm/Fee", 0) or 0))
-            realized = float(data.get("Realized P/L", 0) or 0)
-        except ValueError as e:
-            errors.append(f"Row {lineno}: numeric parse error — {e}")
-            continue
-        if price <= 0:
-            errors.append(f"Row {lineno}: invalid price {price} for {symbol} — skipping")
-            continue
-        pseudo_id = f"CSV-{symbol}-{dt_str}-{qty}-{price}"
-        side      = "LONG" if qty > 0 else "SHORT"
-        records.append({
-            "ibkr_trade_id": pseudo_id,
-            "symbol":        symbol,
-            "asset_class":   data.get("Asset Category", "Stocks").split()[0].upper()[:3],
-            "currency":      data.get("Currency", "USD"),
-            "side":          side,
-            "quantity":      abs(qty),
-            "entry_price":   price,
-            "entry_time":    entry_time,
-            "commission":    commish,
-            "gross_pnl":     round(realized, 2),
-            "net_pnl":       round(realized - commish, 2),
-            "is_open":       (realized == 0),
-        })
-    return records, errors
+            return pd.NaT
+
+    df["datetime"] = df.apply(parse_dt, axis=1)
+    bad_dt = df["datetime"].isna()
+    if bad_dt.any():
+        for _, row in df[bad_dt].iterrows():
+            errors.append(f"Bad date/time '{row.date_str} {row.time_str}' for {row.symbol} — skipped")
+    df = df[~bad_dt].copy()
+
+    df["date"] = df["datetime"].dt.date
+    df["time"] = df["datetime"].dt.time
+
+    # Numeric columns
+    for col in ["quantity", "price", "commission"]:
+        df[col] = pd.to_numeric(df[col], errors="coerce")
+
+    bad_num = df[["quantity", "price"]].isna().any(axis=1)
+    if bad_num.any():
+        for _, row in df[bad_num].iterrows():
+            errors.append(f"Non-numeric qty/price for {row.symbol} at {row.date_str} — skipped")
+    df = df[~bad_num].copy()
+
+    # Absolute values — qty is negative for sells in TLG
+    df["quantity"]   = df["quantity"].abs()
+    df["commission"] = df["commission"].abs().fillna(0.0)
+
+    # Drop zero or negative prices
+    bad_price = df["price"] <= 0
+    if bad_price.any():
+        for _, row in df[bad_price].iterrows():
+            errors.append(f"Invalid price {row.price} for {row.symbol} — skipped")
+    df = df[~bad_price].copy()
+
+    # Drop missing symbols
+    df = df[df["symbol"].str.len() > 0].copy()
+
+    # Build unique exec_id: TLG-{exec_id}-{date}-{time}
+    df["exec_id"] = "TLG-" + df["exec_id"] + "-" + df["date_str"].str.strip() + "-" + df["time_str"].str.strip()
+
+    # Keep only needed columns
+    df = df[["exec_id", "symbol", "date", "time", "action_raw", "side",
+             "quantity", "price", "commission", "currency", "raw_line"]].copy()
+
+    return df, errors
+
+
 # ---------------------------------------------------------------------------
-# Shared: validate + write
+# Step 3 — Duplicate check
 # ---------------------------------------------------------------------------
-def _check_duplicates(records):
+
+def _check_duplicates(df: pd.DataFrame):
     """
-    Check every record against the DB.
-    Returns list of duplicate ibkr_trade_ids found.
+    Query existing exec_ids from STG and return any that already exist.
     """
-    duplicates = []
-    for r in records:
-        if Trade.query.filter_by(ibkr_trade_id=r["ibkr_trade_id"]).first():
-            duplicates.append(r["ibkr_trade_id"])
-    return duplicates
-def _write_records(records):
-    """Write validated, de-duped records to DB. Returns count."""
-    affected_dates = set()
-    for r in records:
-        t = Trade(**r)
-        db.session.add(t)
-        affected_dates.add(r["entry_time"].date())
+    incoming_ids = df["exec_id"].tolist()
+    existing = db.session.query(StgExecution.exec_id)\
+                 .filter(StgExecution.exec_id.in_(incoming_ids))\
+                 .all()
+    return [row.exec_id for row in existing]
+
+
+# ---------------------------------------------------------------------------
+# Step 4 — Write STG
+# ---------------------------------------------------------------------------
+
+def _write_stg(df: pd.DataFrame):
+    for _, row in df.iterrows():
+        ex = StgExecution(
+            exec_id    = row.exec_id,
+            symbol     = row.symbol,
+            date       = row.date,
+            time       = row.time,
+            action_raw = row.action_raw,
+            side       = row.side,
+            quantity   = float(row.quantity),
+            price      = float(row.price),
+            commission = float(row.commission),
+            currency   = row.currency or "USD",
+            raw_line   = row.raw_line,
+        )
+        db.session.add(ex)
     db.session.commit()
-    for d in affected_dates:
-        compute_daily_summary(d)
-    return len(records)
+
+
+# ---------------------------------------------------------------------------
+# Step 5 — Recompute ODS for affected date+symbol combos
+# ---------------------------------------------------------------------------
+
+def _recompute_ods(affected: list):
+    """
+    affected: list of (date, symbol) tuples.
+    Pulls all STG rows for each combo and recomputes ODS.
+    """
+    for trade_date, symbol in affected:
+        rows = StgExecution.query.filter_by(date=trade_date, symbol=symbol).all()
+        if not rows:
+            continue
+
+        df = pd.DataFrame([{
+            "side":       r.side,
+            "quantity":   r.quantity,
+            "price":      r.price,
+            "commission": r.commission,
+        } for r in rows])
+
+        buys  = df[df["side"] == "BUY"]
+        sells = df[df["side"] == "SELL"]
+
+        bought_qty = buys["quantity"].sum()
+        sold_qty   = sells["quantity"].sum()
+
+        # Weighted average prices
+        avg_buy  = (buys["price"]  * buys["quantity"]).sum()  / bought_qty if bought_qty > 0 else 0.0
+        avg_sell = (sells["price"] * sells["quantity"]).sum() / sold_qty   if sold_qty   > 0 else 0.0
+
+        total_commission = df["commission"].sum()
+
+        # P&L: proceeds from sells minus cost of buys minus commissions
+        gross_pnl = round((avg_sell * sold_qty) - (avg_buy * bought_qty), 4)
+        net_pnl   = round(gross_pnl - total_commission, 4)
+
+        # Upsert ODS row
+        ods = OdsDailySymbol.query.filter_by(date=trade_date, symbol=symbol).first()
+        if not ods:
+            ods = OdsDailySymbol(date=trade_date, symbol=symbol)
+            db.session.add(ods)
+
+        ods.bought_qty       = round(float(bought_qty), 4)
+        ods.sold_qty         = round(float(sold_qty),   4)
+        ods.avg_buy_price    = round(float(avg_buy),    6)
+        ods.avg_sell_price   = round(float(avg_sell),   6)
+        ods.total_commission = round(float(total_commission), 4)
+        ods.gross_pnl        = gross_pnl
+        ods.net_pnl          = net_pnl
+
+    db.session.commit()
+
+
+# ---------------------------------------------------------------------------
+# Step 6 — Recompute DailySummary from ODS
+# ---------------------------------------------------------------------------
+
+def _recompute_daily_summary(affected_dates: set):
+    for trade_date in affected_dates:
+        ods_rows = OdsDailySymbol.query.filter_by(date=trade_date).all()
+        if not ods_rows:
+            continue
+
+        winners = [r for r in ods_rows if r.net_pnl > 0]
+        losers  = [r for r in ods_rows if r.net_pnl < 0]
+
+        summary = DailySummary.query.filter_by(date=trade_date).first()
+        if not summary:
+            summary = DailySummary(date=trade_date)
+            db.session.add(summary)
+
+        summary.total_symbols   = len(ods_rows)
+        summary.winning_symbols = len(winners)
+        summary.losing_symbols  = len(losers)
+        summary.gross_pnl       = round(sum(r.gross_pnl for r in ods_rows), 2)
+        summary.net_pnl         = round(sum(r.net_pnl   for r in ods_rows), 2)
+        summary.total_commission= round(sum(r.total_commission for r in ods_rows), 2)
+        summary.win_rate        = round(len(winners) / len(ods_rows) * 100, 1)
+        summary.avg_winner      = round(sum(r.net_pnl for r in winners) / len(winners), 2) if winners else 0.0
+        summary.avg_loser       = round(sum(r.net_pnl for r in losers)  / len(losers),  2) if losers  else 0.0
+
+    db.session.commit()
+
+
+# ---------------------------------------------------------------------------
+# Main entry point
+# ---------------------------------------------------------------------------
+
 def import_file(content: str, filename: str) -> dict:
     """
-    Main entry point. Auto-detects TLG vs CSV, validates, checks duplicates,
-    and only writes to DB if everything is clean.
-    Returns a result dict with keys:
-      ok, new_trades, warnings, duplicates, errors, file_type
+    Full STG → ODS → DailySummary pipeline.
+    Returns a result dict with ok, new_rows, warnings, duplicates, errors.
     """
     filename_lower = filename.lower()
-    # --- Detect file type ---
-    if filename_lower.endswith(".tlg"):
-        file_type = "TLG"
-        records, parse_errors = _parse_tlg_records(content)
-    elif filename_lower.endswith(".csv") or filename_lower.endswith(".txt"):
-        file_type = "CSV"
-        records, parse_errors = _parse_csv_records(content)
-    else:
-        # Try TLG first (pipe format), fall back to CSV
-        # Try TLG first by checking for STK_TRD data rows or section header
-        if "STK_TRD|" in content or "STOCK_TRANSACTIONS" in content:
-            file_type = "TLG"
-            records, parse_errors = _parse_tlg_records(content)
-        else:
-            file_type = "CSV"
-            records, parse_errors = _parse_csv_records(content)
-    # --- Validation: must have parsed at least one record ---
-    if not records and not parse_errors:
-        # Build a diagnostic snippet to help debug
-        first_lines = content.splitlines()[:10]
-        diag = " | ".join(repr(l) for l in first_lines)
-        return {
-            "ok": False,
-            "file_type": file_type,
-            "message": "No valid trade records found in file. "
-                       "Make sure this is an IBKR TLG or CSV Activity Statement.",
-            "errors": [f"First lines of file: {diag}"],
-            "duplicates": [],
-            "warnings": [],
-        }
-    if not records:
-        return {
-            "ok": False,
-            "file_type": file_type,
-            "message": f"File could not be parsed — {len(parse_errors)} error(s).",
-            "errors": parse_errors,
-            "duplicates": [],
-            "warnings": [],
-        }
-    # --- Duplicate check (dry run — no DB writes yet) ---
-    duplicates = _check_duplicates(records)
+
+    # Only TLG supported for now; CSV path can be added later
+    if filename_lower.endswith(".csv"):
+        return {"ok": False, "message": "CSV import not yet supported in new pipeline.",
+                "errors": [], "duplicates": [], "warnings": []}
+
+    # Step 1 — Parse
+    raw_df, parse_errors = _parse_tlg_to_df(content)
+    if raw_df is None:
+        return {"ok": False, "message": "No valid STK_TRD rows found.",
+                "errors": parse_errors, "duplicates": [], "warnings": []}
+
+    # Step 2 — Validate
+    clean_df, validation_errors = _validate_and_clean(raw_df)
+    all_errors = parse_errors + validation_errors
+
+    if clean_df.empty:
+        return {"ok": False, "message": f"No valid rows after validation — {len(all_errors)} error(s).",
+                "errors": all_errors, "duplicates": [], "warnings": []}
+
+    # Step 3 — Dedup
+    duplicates = _check_duplicates(clean_df)
     if duplicates:
         return {
-            "ok": False,
-            "file_type": file_type,
-            "message": f"Import aborted — {len(duplicates)} duplicate trade(s) already in database.",
-            "errors": parse_errors,
-            "duplicates": duplicates,
-            "warnings": [],
-            "parsed_count": len(records),
+            "ok":           False,
+            "message":      f"Import aborted — {len(duplicates)} duplicate execution(s) already in STG.",
+            "errors":       all_errors,
+            "duplicates":   duplicates,
+            "warnings":     [],
+            "parsed_count": len(clean_df),
         }
-    # --- All good — write to DB ---
+
+    # Steps 4-6 — Write
     try:
-        count = _write_records(records)
+        affected_pairs = list(clean_df[["date", "symbol"]].drop_duplicates().itertuples(index=False, name=None))
+        affected_dates = {d for d, _ in affected_pairs}
+
+        _write_stg(clean_df)
+        _recompute_ods(affected_pairs)
+        _recompute_daily_summary(affected_dates)
+
         return {
-            "ok": True,
-            "file_type": file_type,
-            "new_trades": count,
-            "warnings": parse_errors,   # non-fatal parse warnings
-            "errors": [],
-            "duplicates": [],
+            "ok":        True,
+            "new_rows":  len(clean_df),
+            "warnings":  all_errors,
+            "errors":    [],
+            "duplicates":[],
         }
+
     except Exception as e:
         db.session.rollback()
-        return {
-            "ok": False,
-            "file_type": file_type,
-            "message": f"Database error: {e}",
-            "errors": [str(e)],
-            "duplicates": [],
-            "warnings": [],
-        }
-# Keep old name as alias for the CSV-only path used by Flex importer
+        return {"ok": False, "message": f"Database error: {e}",
+                "errors": [str(e)], "duplicates": [], "warnings": []}
+
+
+# Alias used by flex_query.py
 def parse_activity_csv(file_content: str) -> dict:
-    return import_file(file_content, "upload.csv")
+    return import_file(file_content, "upload.tlg")

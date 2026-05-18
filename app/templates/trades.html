@@ -7,73 +7,84 @@
 </div>
 
 <!-- Filters -->
-<form method="GET" class="flex gap-3 mb-6 flex-wrap">
-  <input type="text" name="symbol" value="{{ symbol }}" placeholder="Symbol"
-         class="bg-slate-800 border border-slate-600 rounded-lg px-3 py-2 text-sm text-white w-28 focus:outline-none focus:border-brand" />
-  <input type="date" name="from" value="{{ date_from }}"
-         class="bg-slate-800 border border-slate-600 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-brand" />
-  <input type="date" name="to" value="{{ date_to }}"
-         class="bg-slate-800 border border-slate-600 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-brand" />
+<form method="GET" class="flex gap-3 mb-6 flex-wrap items-end">
+  <div>
+    <label class="block text-slate-400 text-xs mb-1">Symbol</label>
+    <input type="text" name="symbol" value="{{ symbol }}" placeholder="e.g. AEHL"
+           class="bg-slate-800 border border-slate-600 rounded-lg px-3 py-2 text-sm text-white w-28 focus:outline-none focus:border-sky-500 uppercase" />
+  </div>
+  <div>
+    <label class="block text-slate-400 text-xs mb-1">From</label>
+    <input type="date" name="from" value="{{ date_from }}"
+           class="bg-slate-800 border border-slate-600 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-sky-500" />
+  </div>
+  <div>
+    <label class="block text-slate-400 text-xs mb-1">To</label>
+    <input type="date" name="to" value="{{ date_to }}"
+           class="bg-slate-800 border border-slate-600 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-sky-500" />
+  </div>
   <button type="submit"
-          class="bg-brand hover:bg-brand-dark text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors">
+          class="bg-sky-600 hover:bg-sky-500 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors">
     Filter
   </button>
   <a href="/tradelog/trades" class="text-slate-400 hover:text-white px-3 py-2 text-sm">Clear</a>
 </form>
 
-<!-- Table -->
-<div class="card p-0 overflow-hidden">
+{% if rows %}
+<div class="bg-slate-800 border border-slate-700 rounded-xl overflow-hidden">
   <table class="w-full text-sm">
     <thead>
       <tr class="border-b border-slate-700 text-slate-400 text-xs uppercase tracking-wide">
-        <th class="px-4 py-3 text-left">Date</th>
         <th class="px-4 py-3 text-left">Symbol</th>
-        <th class="px-4 py-3 text-left">Side</th>
-        <th class="px-4 py-3 text-right">Qty</th>
-        <th class="px-4 py-3 text-right">Entry</th>
-        <th class="px-4 py-3 text-right">Exit</th>
-        <th class="px-4 py-3 text-right">Duration</th>
+        <th class="px-4 py-3 text-left">Date</th>
+        <th class="px-4 py-3 text-right">Bought Qty</th>
+        <th class="px-4 py-3 text-right">Avg Buy</th>
+        <th class="px-4 py-3 text-right">Sold Qty</th>
+        <th class="px-4 py-3 text-right">Avg Sell</th>
+        <th class="px-4 py-3 text-right">Commission</th>
         <th class="px-4 py-3 text-right">Gross P&amp;L</th>
         <th class="px-4 py-3 text-right">Net P&amp;L</th>
-        <th class="px-4 py-3 text-right">Commission</th>
       </tr>
     </thead>
     <tbody class="divide-y divide-slate-700/50">
-      {% for t in trades %}
+      {% set ns = namespace(last_symbol="") %}
+      {% for row in rows %}
       <tr class="hover:bg-slate-700/40 cursor-pointer transition-colors"
-          onclick="window.location='/tradelog/trades/{{ t.id }}'">
-        <td class="px-4 py-3 text-slate-300">{{ t.entry_time.strftime("%Y-%m-%d %H:%M") }}</td>
-        <td class="px-4 py-3 font-semibold text-white">{{ t.symbol }}</td>
-        <td class="px-4 py-3">
-          <span class="px-2 py-0.5 rounded text-xs font-medium
-                       {% if t.side == 'LONG' %}bg-green-900/60 text-green-400{% else %}bg-red-900/60 text-red-400{% endif %}">
-            {{ t.side }}
-          </span>
+          onclick="window.location='/tradelog/trades/{{ row.date.isoformat() }}/{{ row.symbol }}'">
+
+        <!-- Symbol — only show when it changes -->
+        <td class="px-4 py-3 font-bold text-white">
+          {% if row.symbol != ns.last_symbol %}
+            {{ row.symbol }}
+            {% set ns.last_symbol = row.symbol %}
+          {% endif %}
         </td>
-        <td class="px-4 py-3 text-right text-slate-300">{{ t.quantity }}</td>
-        <td class="px-4 py-3 text-right text-slate-300">${{ "%.2f"|format(t.entry_price) }}</td>
+
+        <td class="px-4 py-3 text-slate-300">{{ row.date.strftime("%Y-%m-%d") }}</td>
+        <td class="px-4 py-3 text-right text-slate-300">{{ "%.0f"|format(row.bought_qty) }}</td>
+        <td class="px-4 py-3 text-right text-slate-300">${{ "%.4f"|format(row.avg_buy_price) }}</td>
+        <td class="px-4 py-3 text-right text-slate-300">{{ "%.0f"|format(row.sold_qty) }}</td>
         <td class="px-4 py-3 text-right text-slate-300">
-          {% if t.exit_price %}${{ "%.2f"|format(t.exit_price) }}{% else %}—{% endif %}
+          {% if row.avg_sell_price > 0 %}${{ "%.4f"|format(row.avg_sell_price) }}{% else %}—{% endif %}
         </td>
-        <td class="px-4 py-3 text-right text-slate-400">
-          {% if t.duration_minutes %}{{ t.duration_minutes }}m{% else %}—{% endif %}
+        <td class="px-4 py-3 text-right text-slate-500">${{ "%.4f"|format(row.total_commission) }}</td>
+        <td class="px-4 py-3 text-right font-medium
+                   {% if row.gross_pnl > 0 %}text-emerald-400{% elif row.gross_pnl < 0 %}text-red-400{% else %}text-slate-400{% endif %}">
+          ${{ "%.2f"|format(row.gross_pnl) }}
         </td>
-        <td class="px-4 py-3 text-right {% if t.gross_pnl and t.gross_pnl >= 0 %}gain{% elif t.gross_pnl %}loss{% endif %}">
-          {% if t.gross_pnl is not none %}${{ "%.2f"|format(t.gross_pnl) }}{% else %}—{% endif %}
-        </td>
-        <td class="px-4 py-3 text-right font-semibold {% if t.net_pnl and t.net_pnl >= 0 %}gain{% elif t.net_pnl %}loss{% endif %}">
-          {% if t.net_pnl is not none %}${{ "%.2f"|format(t.net_pnl) }}{% else %}—{% endif %}
-        </td>
-        <td class="px-4 py-3 text-right text-slate-500">${{ "%.2f"|format(t.commission) }}</td>
-      </tr>
-      {% else %}
-      <tr>
-        <td colspan="10" class="px-4 py-12 text-center text-slate-500">
-          No trades found. <a href="/tradelog/import" class="text-brand hover:underline">Import trades →</a>
+        <td class="px-4 py-3 text-right font-bold
+                   {% if row.net_pnl > 0 %}text-emerald-400{% elif row.net_pnl < 0 %}text-red-400{% else %}text-slate-400{% endif %}">
+          ${{ "%.2f"|format(row.net_pnl) }}
         </td>
       </tr>
       {% endfor %}
     </tbody>
   </table>
 </div>
+{% else %}
+<div class="bg-slate-800 border border-slate-700 rounded-xl p-12 text-center">
+  <p class="text-slate-500">No trades found.</p>
+  <a href="/tradelog/import" class="text-sky-400 hover:underline text-sm mt-2 inline-block">Import trades →</a>
+</div>
+{% endif %}
 {% endblock %}

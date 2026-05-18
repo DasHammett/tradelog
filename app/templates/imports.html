@@ -10,7 +10,7 @@
   <div class="mb-6 rounded-xl border border-green-700 bg-green-900/20 p-4">
     <p class="text-green-400 font-semibold">
       ✓ Import successful —
-      {{ result.new_trades }} trade(s) imported
+      {{ result.new_rows }} execution(s) written to STG
       {% if result.file_type %}from {{ result.file_type }} file{% endif %}.
     </p>
     {% if result.warnings %}
