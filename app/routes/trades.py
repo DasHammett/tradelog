@@ -23,8 +23,8 @@ def trades():
         query = query.filter(OdsDailySymbol.date <= datetime.strptime(date_to, "%Y-%m-%d").date())
 
     # Group by symbol, then earliest date at bottom within each symbol
-    rows = query.order_by(OdsDailySymbol.symbol.asc(),
-                          OdsDailySymbol.date.desc()).limit(500).all()
+    rows = query.order_by(OdsDailySymbol.date.desc(),
+                          OdsDailySymbol.symbol.asc()).limit(500).all()
 
     return render_template("trades.html", rows=rows, symbol=symbol,
                            date_from=date_from, date_to=date_to)

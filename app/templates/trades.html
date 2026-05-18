@@ -47,18 +47,10 @@
       </tr>
     </thead>
     <tbody class="divide-y divide-slate-700/50">
-      {% set ns = namespace(last_symbol="") %}
       {% for row in rows %}
       <tr class="hover:bg-slate-700/40 cursor-pointer transition-colors"
           onclick="window.location='/tradelog/trades/{{ row.date.isoformat() }}/{{ row.symbol }}'">
-
-        <!-- Symbol — only show when it changes -->
-        <td class="px-4 py-3 font-bold text-white">
-          {% if row.symbol != ns.last_symbol %}
-            {{ row.symbol }}
-            {% set ns.last_symbol = row.symbol %}
-          {% endif %}
-        </td>
+        <td class="px-4 py-3 font-bold text-white">{{ row.symbol }}</td>
 
         <td class="px-4 py-3 text-slate-300">{{ row.date.strftime("%Y-%m-%d") }}</td>
         <td class="px-4 py-3 text-right text-slate-300">{{ "%.0f"|format(row.bought_qty) }}</td>

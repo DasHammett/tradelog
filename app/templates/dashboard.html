@@ -23,7 +23,7 @@
 
   <!-- Total Gain/Loss -->
   <div class="bg-slate-800 border border-slate-700 rounded-xl p-4">
-    <p class="text-slate-400 text-xs uppercase tracking-wide mb-2">Total Gain / Loss</p>
+    <p class="text-slate-300 text-xs uppercase tracking-wide mb-2">Total Gain / Loss</p>
     <p class="text-3xl font-bold {% if m.net_pnl >= 0 %}text-emerald-400{% else %}text-red-400{% endif %}">
       ${{ "%.2f"|format(m.net_pnl) }}
     </p>
@@ -31,7 +31,7 @@
 
   <!-- Avg Winner vs Loser bars -->
   <div class="bg-slate-800 border border-slate-700 rounded-xl p-4">
-    <p class="text-slate-400 text-xs uppercase tracking-wide mb-3">Avg Winning vs Losing Trade</p>
+    <p class="text-slate-300 text-xs uppercase tracking-wide mb-3">Avg Winning vs Losing Trade</p>
     {% set max_bar = [m.avg_winner, m.avg_loser] | max %}
     <div class="space-y-2">
       <div>
@@ -57,7 +57,7 @@
 
   <!-- Win vs Loss Donut -->
   <div class="bg-slate-800 border border-slate-700 rounded-xl p-4 flex flex-col items-center justify-center">
-    <p class="text-slate-400 text-xs uppercase tracking-wide mb-2 self-start">Winning vs Losing Trades</p>
+    <p class="text-slate-300 text-xs uppercase tracking-wide mb-2 self-start">Winning vs Losing Trades</p>
     <canvas id="donutChart" width="90" height="90"></canvas>
     <div class="flex gap-4 mt-2 text-xs">
       <span class="text-emerald-400">{{ m.winning_trades }} W</span>
@@ -67,7 +67,7 @@
 
   <!-- Hold Time -->
   <div class="bg-slate-800 border border-slate-700 rounded-xl p-4">
-    <p class="text-slate-400 text-xs uppercase tracking-wide mb-3">Hold Time: Winners vs Losers</p>
+    <p class="text-slate-300 text-xs uppercase tracking-wide mb-3">Hold Time: Winners vs Losers</p>
     {% set ht = m.hold_time %}
     {% set max_ht = [ht.winners, ht.losers] | max %}
     <div class="space-y-2">
@@ -92,11 +92,11 @@
 <!-- ── ROW 2: Cumulative P&L + Avg Trade P&L ── -->
 <div class="grid grid-cols-2 gap-3 mb-3">
   <div class="bg-slate-800 border border-slate-700 rounded-xl p-4">
-    <p class="text-slate-400 text-xs uppercase tracking-wide mb-3">Cumulative P&amp;L</p>
+    <p class="text-slate-300 text-xs uppercase tracking-wide mb-3">Cumulative P&amp;L</p>
     <canvas id="equityChart" height="120"></canvas>
   </div>
   <div class="bg-slate-800 border border-slate-700 rounded-xl p-4">
-    <p class="text-slate-400 text-xs uppercase tracking-wide mb-3">Average Trade P&amp;L</p>
+    <p class="text-slate-300 text-xs uppercase tracking-wide mb-3">Average Trade P&amp;L</p>
     <canvas id="avgPnlChart" height="120"></canvas>
   </div>
 </div>
@@ -106,7 +106,7 @@
 
   <!-- By Price -->
   <div class="bg-slate-800 border border-slate-700 rounded-xl p-4">
-    <p class="text-slate-400 text-xs uppercase tracking-wide mb-3">Performance By Price</p>
+    <p class="text-slate-300 text-xs uppercase tracking-wide mb-3">Performance By Price</p>
     <div id="byPriceRows" class="space-y-1.5"></div>
     <div class="flex justify-between items-center mt-3 text-slate-500 text-xs">
       <button id="pricePrev" class="px-2 py-1 bg-slate-700 rounded hover:bg-slate-600">‹</button>
@@ -117,7 +117,7 @@
 
   <!-- By Hour -->
   <div class="bg-slate-800 border border-slate-700 rounded-xl p-4">
-    <p class="text-slate-400 text-xs uppercase tracking-wide mb-3">Performance By Hour Of Day</p>
+    <p class="text-slate-300 text-xs uppercase tracking-wide mb-3">Performance By Hour Of Day</p>
     <div id="byHourRows" class="space-y-1.5"></div>
     <div class="flex justify-between items-center mt-3 text-slate-500 text-xs">
       <button id="hourPrev" class="px-2 py-1 bg-slate-700 rounded hover:bg-slate-600">‹</button>
@@ -129,15 +129,15 @@
   <!-- By DOW + Commissions -->
   <div class="flex flex-col gap-3">
     <div class="bg-slate-800 border border-slate-700 rounded-xl p-4">
-      <p class="text-slate-400 text-xs uppercase tracking-wide mb-3">Performance By Day Of Week</p>
+      <p class="text-slate-300 text-xs uppercase tracking-wide mb-3">Performance By Day Of Week</p>
       <div id="byDowRows" class="space-y-1.5"></div>
     </div>
     <div class="bg-slate-800 border border-slate-700 rounded-xl p-4">
-      <p class="text-slate-400 text-xs uppercase tracking-wide mb-1">Total Commissions</p>
+      <p class="text-slate-300 text-xs uppercase tracking-wide mb-1">Total Commissions</p>
       <p class="text-2xl font-bold text-white">${{ "%.2f"|format(m.total_commissions) }}</p>
     </div>
     <div class="bg-slate-800 border border-slate-700 rounded-xl p-4">
-      <p class="text-slate-400 text-xs uppercase tracking-wide mb-1">Total Fees</p>
+      <p class="text-slate-300 text-xs uppercase tracking-wide mb-1">Total Fees</p>
       <p class="text-2xl font-bold text-white">${{ "%.2f"|format(m.total_fees) }}</p>
     </div>
   </div>
@@ -147,11 +147,11 @@
 <!-- ── ROW 4: Win % + Drawdown ── -->
 <div class="grid grid-cols-2 gap-3">
   <div class="bg-slate-800 border border-slate-700 rounded-xl p-4">
-    <p class="text-slate-400 text-xs uppercase tracking-wide mb-3">Win %</p>
+    <p class="text-slate-300 text-xs uppercase tracking-wide mb-3">Win %</p>
     <canvas id="winRateChart" height="120"></canvas>
   </div>
   <div class="bg-slate-800 border border-slate-700 rounded-xl p-4">
-    <p class="text-slate-400 text-xs uppercase tracking-wide mb-3">Cumulative Drawdown</p>
+    <p class="text-slate-300 text-xs uppercase tracking-wide mb-3">Cumulative Drawdown</p>
     <canvas id="drawdownChart" height="120"></canvas>
   </div>
 </div>
@@ -277,4 +277,3 @@ setupPaged("hourPrev",  "hourNext",  "hourPageLabel",  "byHourRows",  byHour,  6
 renderPerfRows("byDowRows", byDow, 0, 7);
 </script>
 {% endblock %}
-
