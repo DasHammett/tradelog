@@ -48,7 +48,7 @@
           </p>
         </div>
         <div>
-          <p class="text-slate-400 text-xs uppercase tracking-wide mb-1">Roundtrips</p>
+          <p class="text-slate-400 text-xs uppercase tracking-wide mb-1">Trades</p>
           <p class="text-2xl font-bold text-white">{{ m.total_trades }}</p>
         </div>
         <div>
@@ -162,7 +162,7 @@
       <div class="flex-1 min-h-0"><canvas id="winRateChart"></canvas></div>
     </div>
     <div class="bg-slate-800 border border-slate-700 rounded-xl p-4 flex flex-col min-h-0">
-      <p class="text-slate-300 text-xs uppercase tracking-wide mb-2 shrink-0">Average Trade P&amp;L by Day</p>
+      <p class="text-slate-300 text-xs uppercase tracking-wide mb-2 shrink-0">Total P&amp;L by Day</p>
       <div class="flex-1 min-h-0"><canvas id="avgPnlChart"></canvas></div>
     </div>
   </div>
@@ -182,7 +182,7 @@ const byHour   = {{ metrics.by_hour         | tojson }};
 const byDow    = {{ metrics.by_dow          | tojson }};
 
 const axisStyle = {
-  ticks: { color: "#64748b", maxTicksLimit: 7, font: { size: 10 } },
+  ticks: { color: "#94a3b8", maxTicksLimit: 7, font: { size: 11 } },
   grid:  { color: "#1e293b" }
 };
 
@@ -289,13 +289,13 @@ responsiveChart("evolutionChart", {
   }
 });
 
-// ── Avg P&L per day ──
+// ── Total P&L per day ──
 responsiveChart("avgPnlChart", {
   type: "bar",
   data: {
-    labels: avgPnl.map(d => d.date),
-    datasets: [{ data: avgPnl.map(d => d.avg_pnl),
-      backgroundColor: avgPnl.map(d => d.avg_pnl >= 0 ? "rgba(16,185,129,0.8)" : "rgba(239,68,68,0.8)"),
+    labels: pnlByDay.map(d => d.date),
+    datasets: [{ data: pnlByDay.map(d => d.pnl),
+      backgroundColor: pnlByDay.map(d => d.pnl >= 0 ? "rgba(16,185,129,0.8)" : "rgba(239,68,68,0.8)"),
       borderRadius: 3 }]
   },
   options: { responsive: true, maintainAspectRatio: false,
