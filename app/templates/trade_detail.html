@@ -34,17 +34,17 @@
 
 <!-- TradingView chart -->
 <div class="bg-slate-800 border border-slate-700 rounded-xl p-4 mb-6">
-  <div class="flex items-center justify-between mb-4">
-    <p class="text-slate-300 font-semibold">1-Minute Chart</p>
-    <button id="loadChart"
-            class="bg-sky-600 hover:bg-sky-500 text-white px-3 py-1.5 rounded-lg text-sm font-medium transition-colors">
-      Load Chart
-    </button>
+  <div class="flex items-center justify-between mb-3">
+    <p class="text-white font-semibold">1-Minute Chart — {{ symbol }}</p>
+    <div class="flex items-center gap-3">
+      <span id="chartStatus" class="text-slate-400 text-xs"></span>
+      <button id="reloadChart"
+              class="bg-slate-700 hover:bg-slate-600 text-white px-3 py-1.5 rounded-lg text-xs font-medium transition-colors hidden">
+        Reload
+      </button>
+    </div>
   </div>
-  <div id="chartContainer" class="w-full" style="height:400px; display:none;"></div>
-  <p id="chartMsg" class="text-slate-500 text-sm text-center py-6">
-    Click "Load Chart" to fetch 1-min candles.
-  </p>
+  <div id="chartContainer" class="w-full rounded-lg overflow-hidden" style="height:480px;"></div>
 </div>
 
 <!-- STG Executions table -->
@@ -100,55 +100,88 @@
 
 {% block scripts %}
 <script>
-document.getElementById("loadChart").addEventListener("click", async () => {
-  const btn       = document.getElementById("loadChart");
-  const msg       = document.getElementById("chartMsg");
-  const container = document.getElementById("chartContainer");
+const CHART_URL  = "/tradelog/trades/{{ trade_date.isoformat() }}/{{ symbol }}/chart";
+const container  = document.getElementById("chartContainer");
+const statusEl   = document.getElementById("chartStatus");
+const reloadBtn  = document.getElementById("reloadChart");
+let   chartInst  = null;
 
-  btn.textContent = "Loading…";
-  btn.disabled    = true;
+async function loadChart() {
+  statusEl.textContent = "Loading market data…";
+  reloadBtn.classList.add("hidden");
 
   try {
-    const resp = await fetch("/tradelog/trades/{{ trade_date.isoformat() }}/{{ symbol }}/chart");
+    const resp = await fetch(CHART_URL);
     const data = await resp.json();
 
-    if (data.error || !data.candles || !data.candles.length) {
-      msg.textContent = data.error || "No chart data available for this date.";
-      btn.textContent = "Load Chart";
-      btn.disabled    = false;
+    if (data.error) {
+      statusEl.textContent = data.error;
+      reloadBtn.classList.remove("hidden");
       return;
     }
 
-    container.style.display = "block";
-    msg.style.display       = "none";
-    btn.style.display       = "none";
+    if (!data.candles || !data.candles.length) {
+      statusEl.textContent = "No candle data returned.";
+      reloadBtn.classList.remove("hidden");
+      return;
+    }
 
-    const chart = LightweightCharts.createChart(container, {
+    statusEl.textContent = `${data.candles.length} candles · ${data.markers.length} executions`;
+
+    // Destroy previous instance if reloading
+    if (chartInst) { chartInst.remove(); chartInst = null; }
+    container.innerHTML = "";
+
+    chartInst = LightweightCharts.createChart(container, {
       width:  container.clientWidth,
-      height: 400,
-      layout: { background: { color: "#0f172a" }, textColor: "#94a3b8" },
-      grid:   { vertLines: { color: "#1e293b" }, horzLines: { color: "#1e293b" } },
-      rightPriceScale: { borderColor: "#334155" },
-      timeScale: { borderColor: "#334155", timeVisible: true, secondsVisible: false },
+      height: 480,
+      layout: {
+        background: { color: "#0f172a" },
+        textColor:  "#f1f5f9",           // white axis labels
+      },
+      grid: {
+        vertLines: { color: "#1e293b" },
+        horzLines: { color: "#1e293b" },
+      },
+      crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
+      rightPriceScale: {
+        borderColor: "#334155",
+        textColor:   "#f1f5f9",
+      },
+      timeScale: {
+        borderColor:    "#334155",
+        textColor:      "#f1f5f9",
+        timeVisible:    true,
+        secondsVisible: true,
+      },
     });
 
-    const series = chart.addCandlestickSeries({
-      upColor: "#22c55e", downColor: "#ef4444",
-      borderUpColor: "#22c55e", borderDownColor: "#ef4444",
-      wickUpColor:   "#22c55e", wickDownColor:   "#ef4444",
+    const series = chartInst.addCandlestickSeries({
+      upColor:        "#22c55e",
+      downColor:      "#ef4444",
+      borderUpColor:  "#22c55e",
+      borderDownColor:"#ef4444",
+      wickUpColor:    "#22c55e",
+      wickDownColor:  "#ef4444",
     });
 
     series.setData(data.candles);
     series.setMarkers(data.markers);
-    chart.timeScale().fitContent();
+    chartInst.timeScale().fitContent();
 
-    window.addEventListener("resize", () => chart.applyOptions({ width: container.clientWidth }));
+    window.addEventListener("resize", () => {
+      if (chartInst) chartInst.applyOptions({ width: container.clientWidth });
+    });
 
   } catch (e) {
-    msg.textContent = "Failed to load chart: " + e.message;
-    btn.textContent = "Load Chart";
-    btn.disabled    = false;
+    statusEl.textContent = "Error: " + e.message;
+    reloadBtn.classList.remove("hidden");
   }
-});
+}
+
+reloadBtn.addEventListener("click", loadChart);
+
+// Auto-load on page open
+loadChart();
 </script>
 {% endblock %}

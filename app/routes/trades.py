@@ -48,7 +48,7 @@ def trade_detail(trade_date, symbol):
 
 @trades_bp.route("/tradelog/trades/<string:trade_date>/<string:symbol>/chart")
 def trade_chart_data(trade_date, symbol):
-    """JSON endpoint — 1-min candles for TradingView with entry/exit markers."""
+    """JSON endpoint — 1-min candles for TradingView with one marker per execution."""
     try:
         d = datetime.strptime(trade_date, "%Y-%m-%d").date()
     except ValueError:
@@ -57,18 +57,11 @@ def trade_chart_data(trade_date, symbol):
     executions = StgExecution.query.filter_by(date=d, symbol=symbol.upper())\
                                    .order_by(StgExecution.time.asc()).all()
     if not executions:
-        return jsonify({"error": "No executions found"})
-
-    first_exec = executions[0]
-    last_exec  = executions[-1]
-
-    entry_dt = datetime.combine(first_exec.date, first_exec.time)
-    exit_dt  = datetime.combine(last_exec.date,  last_exec.time)
+        return jsonify({"error": "No executions found for this session"})
 
     data = get_candles(
         symbol     = symbol.upper(),
         trade_date = d,
-        entry_time = entry_dt,
-        exit_time  = exit_dt,
+        executions = executions,
     )
     return jsonify(data or {"error": "No market data available"})
