@@ -17,5 +17,8 @@ class Config:
     FLEX_TOKEN = os.environ.get("FLEX_TOKEN", "")
     FLEX_QUERY_ID = os.environ.get("FLEX_QUERY_ID", "")
 
+    # Polygon.io market data
+    POLYGON_API_KEY = os.environ.get("POLYGON_API_KEY", "")
+
     # Scheduler — run Flex sync daily at this hour (24h)
     FLEX_SYNC_HOUR = int(os.environ.get("FLEX_SYNC_HOUR", 18))
