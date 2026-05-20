@@ -35,7 +35,11 @@
 <!-- TradingView chart -->
 <div class="bg-slate-800 border border-slate-700 rounded-xl p-4 mb-6">
   <div class="flex items-center justify-between mb-3">
-    <p class="text-white font-semibold">1-Minute Chart — {{ symbol }}</p>
+    <p class="text-white font-semibold">1-Minute Chart — {{ symbol }}
+      <span class="text-amber-400 text-xs ml-2">── EMA 20</span>
+      <span class="text-sky-400 text-xs ml-2">── MACD</span>
+      <span class="text-orange-400 text-xs ml-2">── Signal</span>
+    </p>
     <div class="flex items-center gap-3">
       <span id="chartStatus" class="text-slate-400 text-xs"></span>
       <button id="reloadChart"
@@ -44,7 +48,14 @@
       </button>
     </div>
   </div>
-  <div id="chartContainer" class="w-full rounded-lg overflow-hidden" style="height:480px;"></div>
+  <!-- Candles + EMA20 -->
+  <div id="paneCandles" class="w-full rounded-lg overflow-hidden"></div>
+  <!-- Volume -->
+  <div class="text-slate-500 text-xs px-1 mt-2 mb-0.5">Volume</div>
+  <div id="paneVolume"  class="w-full rounded-lg overflow-hidden"></div>
+  <!-- MACD -->
+  <div class="text-slate-500 text-xs px-1 mt-2 mb-0.5">MACD (12, 26, 9)</div>
+  <div id="paneMACD"   class="w-full rounded-lg overflow-hidden"></div>
 </div>
 
 <!-- STG Executions table -->
@@ -100,15 +111,53 @@
 
 {% block scripts %}
 <script>
-const CHART_URL  = "/tradelog/trades/{{ trade_date.isoformat() }}/{{ symbol }}/chart";
-const container  = document.getElementById("chartContainer");
-const statusEl   = document.getElementById("chartStatus");
-const reloadBtn  = document.getElementById("reloadChart");
-let   chartInst  = null;
+const CHART_URL = "/tradelog/trades/{{ trade_date.isoformat() }}/{{ symbol }}/chart";
+const statusEl  = document.getElementById("chartStatus");
+const reloadBtn = document.getElementById("reloadChart");
+
+// Eastern offset in seconds (UTC-5 in winter, UTC-4 in summer)
+// We detect it from the trade date rather than hard-coding
+const TRADE_DATE   = "{{ trade_date.isoformat() }}";
+const ET_OFFSET_MS = isDST(new Date(TRADE_DATE)) ? -4 * 3600 : -5 * 3600;
+
+function isDST(d) {
+  // US DST: second Sunday in March → first Sunday in November
+  const jan = new Date(d.getFullYear(), 0, 1).getTimezoneOffset();
+  const jul = new Date(d.getFullYear(), 6, 1).getTimezoneOffset();
+  return d.getTimezoneOffset() < Math.max(jan, jul);
+}
+
+// Adjust UTC timestamp → Eastern for display on x-axis
+function toEastern(utcSec) {
+  return utcSec + ET_OFFSET_MS;
+}
+
+const chartOpts = {
+  layout: { background: { color: "#0f172a" }, textColor: "#f1f5f9" },
+  grid:   { vertLines: { color: "#1e293b" }, horzLines: { color: "#1e293b" } },
+  crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
+  rightPriceScale: { borderColor: "#334155" },
+  timeScale: {
+    borderColor:    "#334155",
+    timeVisible:    true,
+    secondsVisible: false,
+    tickMarkFormatter: (t) => {
+      const d = new Date((t + Math.abs(ET_OFFSET_MS)) * 1000);  // display as ET
+      // Format as HH:MM
+      return d.getUTCHours().toString().padStart(2,"0") + ":" +
+             d.getUTCMinutes().toString().padStart(2,"0");
+    }
+  },
+};
 
 async function loadChart() {
   statusEl.textContent = "Loading market data…";
   reloadBtn.classList.add("hidden");
+
+  // Clear previous charts
+  document.getElementById("paneCandles").innerHTML = "";
+  document.getElementById("paneVolume").innerHTML  = "";
+  document.getElementById("paneMACD").innerHTML    = "";
 
   try {
     const resp = await fetch(CHART_URL);
@@ -119,58 +168,99 @@ async function loadChart() {
       reloadBtn.classList.remove("hidden");
       return;
     }
-
-    if (!data.candles || !data.candles.length) {
+    if (!data.candles?.length) {
       statusEl.textContent = "No candle data returned.";
       reloadBtn.classList.remove("hidden");
       return;
     }
 
-    statusEl.textContent = `${data.candles.length} candles · ${data.markers.length} executions`;
+    statusEl.textContent =
+      `${data.candles.length} candles · ${data.markers.length} executions`;
 
-    // Destroy previous instance if reloading
-    if (chartInst) { chartInst.remove(); chartInst = null; }
-    container.innerHTML = "";
+    // Adjust all timestamps to Eastern for display
+    const adjust = arr => arr.map(d => ({ ...d, time: toEastern(d.time) }));
 
-    chartInst = LightweightCharts.createChart(container, {
-      width:  container.clientWidth,
-      height: 480,
-      layout: {
-        background: { color: "#0f172a" },
-        textColor:  "#f1f5f9",           // white axis labels
-      },
-      grid: {
-        vertLines: { color: "#1e293b" },
-        horzLines: { color: "#1e293b" },
-      },
-      crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
-      rightPriceScale: {
-        borderColor: "#334155",
-        textColor:   "#f1f5f9",
-      },
-      timeScale: {
-        borderColor:    "#334155",
-        textColor:      "#f1f5f9",
-        timeVisible:    true,
-        secondsVisible: true,
-      },
+    const candles    = adjust(data.candles);
+    const volume     = adjust(data.volume);
+    const ema20      = adjust(data.ema20);
+    const macdLine   = adjust(data.macd_line);
+    const signalLine = adjust(data.signal_line);
+    const histogram  = adjust(data.histogram);
+    const markers    = adjust(data.markers);
+
+    // ── Pane 1: Candlesticks + EMA20 ──
+    const chart1 = LightweightCharts.createChart(
+      document.getElementById("paneCandles"),
+      { ...chartOpts, width: document.getElementById("paneCandles").clientWidth, height: 340 }
+    );
+    const candleSeries = chart1.addCandlestickSeries({
+      upColor: "#22c55e", downColor: "#ef4444",
+      borderUpColor: "#22c55e", borderDownColor: "#ef4444",
+      wickUpColor:   "#22c55e", wickDownColor:   "#ef4444",
+    });
+    candleSeries.setData(candles);
+    candleSeries.setMarkers(markers);
+
+    const emaSeries = chart1.addLineSeries({
+      color: "#f59e0b", lineWidth: 1.5,
+      priceLineVisible: false, lastValueVisible: false,
+    });
+    emaSeries.setData(ema20);
+    chart1.timeScale().fitContent();
+
+    // ── Pane 2: Volume ──
+    const chart2 = LightweightCharts.createChart(
+      document.getElementById("paneVolume"),
+      { ...chartOpts, width: document.getElementById("paneVolume").clientWidth, height: 100 }
+    );
+    const volSeries = chart2.addHistogramSeries({
+      priceFormat: { type: "volume" },
+      priceScaleId: "volume",
+    });
+    chart2.priceScale("volume").applyOptions({ scaleMargins: { top: 0.1, bottom: 0 } });
+    volSeries.setData(volume);
+    chart2.timeScale().fitContent();
+
+    // ── Pane 3: MACD ──
+    const chart3 = LightweightCharts.createChart(
+      document.getElementById("paneMACD"),
+      { ...chartOpts, width: document.getElementById("paneMACD").clientWidth, height: 120 }
+    );
+    const histSeries = chart3.addHistogramSeries({
+      priceLineVisible: false, lastValueVisible: false,
+    });
+    histSeries.setData(histogram);
+
+    const macdSeries = chart3.addLineSeries({
+      color: "#38bdf8", lineWidth: 1.5,
+      priceLineVisible: false, lastValueVisible: false,
+    });
+    macdSeries.setData(macdLine);
+
+    const signalSeries = chart3.addLineSeries({
+      color: "#f97316", lineWidth: 1.5,
+      priceLineVisible: false, lastValueVisible: false,
+    });
+    signalSeries.setData(signalLine);
+    chart3.timeScale().fitContent();
+
+    // Sync all three time scales
+    [chart1, chart2, chart3].forEach((src, si) => {
+      src.timeScale().subscribeVisibleLogicalRangeChange(range => {
+        [chart1, chart2, chart3].forEach((tgt, ti) => {
+          if (ti !== si) tgt.timeScale().setVisibleLogicalRange(range);
+        });
+      });
     });
 
-    const series = chartInst.addCandlestickSeries({
-      upColor:        "#22c55e",
-      downColor:      "#ef4444",
-      borderUpColor:  "#22c55e",
-      borderDownColor:"#ef4444",
-      wickUpColor:    "#22c55e",
-      wickDownColor:  "#ef4444",
-    });
-
-    series.setData(data.candles);
-    series.setMarkers(data.markers);
-    chartInst.timeScale().fitContent();
-
+    // Resize handler
     window.addEventListener("resize", () => {
-      if (chartInst) chartInst.applyOptions({ width: container.clientWidth });
+      const w1 = document.getElementById("paneCandles").clientWidth;
+      const w2 = document.getElementById("paneVolume").clientWidth;
+      const w3 = document.getElementById("paneMACD").clientWidth;
+      chart1.applyOptions({ width: w1 });
+      chart2.applyOptions({ width: w2 });
+      chart3.applyOptions({ width: w3 });
     });
 
   } catch (e) {
@@ -180,8 +270,6 @@ async function loadChart() {
 }
 
 reloadBtn.addEventListener("click", loadChart);
-
-// Auto-load on page open
 loadChart();
 </script>
 {% endblock %}
