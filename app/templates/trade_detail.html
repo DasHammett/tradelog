@@ -174,7 +174,7 @@ async function loadChart() {
     });
 
     // Volume — on a separate right scale, pinned to bottom 20% of pane
-    const volSeries = chart1.addHistogramSeries({
+    const volSeries = chart1.addSeries(LightweightCharts.HistogramSeries, {
       priceFormat:  { type: "volume" },
       priceScaleId: "vol",
     });
@@ -184,20 +184,20 @@ async function loadChart() {
     volSeries.setData(volume);
 
     // Candles — on default right scale
-    const candleSeries = chart1.addCandlestickSeries({
+    const candleSeries = chart1.addSeries(LightweightCharts.CandlestickSeries, {
       upColor: "#22c55e", downColor: "#ef4444",
       borderUpColor: "#22c55e", borderDownColor: "#ef4444",
       wickUpColor:   "#22c55e", wickDownColor:   "#ef4444",
       priceScaleId: "right",
     });
     chart1.priceScale("right").applyOptions({
-      scaleMargins: { top: 0.05, bottom: 0.25 },  // leave room for volume
+      scaleMargins: { top: 0.05, bottom: 0.25 },
     });
     candleSeries.setData(candles);
-    candleSeries.setMarkers(markers);
+    candleSeries.setMarkers(markers.map(m => ({ ...m, size: 0.5 })));
 
     // EMA 20
-    const emaSeries = chart1.addLineSeries({
+    const emaSeries = chart1.addSeries(LightweightCharts.LineSeries, {
       color: "#f59e0b", lineWidth: 1.5,
       priceLineVisible: false, lastValueVisible: false,
       priceScaleId: "right",
@@ -213,18 +213,18 @@ async function loadChart() {
       height: 130,
     });
 
-    const histSeries = chart2.addHistogramSeries({
+    const histSeries = chart2.addSeries(LightweightCharts.HistogramSeries, {
       priceLineVisible: false, lastValueVisible: false,
     });
     histSeries.setData(histogram);
 
-    const macdSeries = chart2.addLineSeries({
+    const macdSeries = chart2.addSeries(LightweightCharts.LineSeries, {
       color: "#38bdf8", lineWidth: 1.5,
       priceLineVisible: false, lastValueVisible: false,
     });
     macdSeries.setData(macdLine);
 
-    const signalSeries = chart2.addLineSeries({
+    const signalSeries = chart2.addSeries(LightweightCharts.LineSeries, {
       color: "#f97316", lineWidth: 1.5,
       priceLineVisible: false, lastValueVisible: false,
     });
