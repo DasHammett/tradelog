@@ -177,21 +177,30 @@ def get_candles(symbol: str, trade_date, executions: list):
         ]
 
         # Build markers — snapped to candle boundaries
-        markers = []
+        # If multiple executions land on the same candle+side, merge their text
+        raw_markers = []
         for ex in executions:
             exec_utc_ts = int(_to_utc(trade_date, ex.time).timestamp())
             snapped_ts  = _snap_to_candle(exec_utc_ts, candle_times)
             is_buy      = ex.side == "BUY"
-
-            markers.append({
+            raw_markers.append({
                 "time":     snapped_ts,
                 "position": "belowBar" if is_buy else "aboveBar",
                 "color":    "#22c55e"  if is_buy else "#ef4444",
                 "shape":    "arrowUp"  if is_buy else "arrowDown",
-                "text":     f"{int(ex.quantity)}\n${ex.price:.4f}",
+                "size":     1,
+                "text":     f"{int(ex.quantity)} · ${ex.price:.2f}",
             })
 
-        markers.sort(key=lambda m: m["time"])
+        # Merge markers with same time+position into one
+        merged = {}
+        for m in raw_markers:
+            key = (m["time"], m["position"])
+            if key in merged:
+                merged[key]["text"] += "  " + m["text"]
+            else:
+                merged[key] = dict(m)
+        markers = sorted(merged.values(), key=lambda m: m["time"])
 
         return {
             "candles":     candles,
