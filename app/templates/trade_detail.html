@@ -48,11 +48,7 @@
       </button>
     </div>
   </div>
-  <!-- Candles + EMA20 + Volume -->
-  <div id="paneCandlesVol" class="w-full rounded-lg overflow-hidden"></div>
-  <!-- MACD -->
-  <div class="text-slate-500 text-xs px-1 mt-2 mb-0.5">MACD (12, 26, 9)</div>
-  <div id="paneMACD" class="w-full rounded-lg overflow-hidden"></div>
+  <div id="chartContainer" class="w-full rounded-lg overflow-hidden"></div>
 </div>
 
 <!-- STG Executions table -->
@@ -112,165 +108,113 @@ const CHART_URL = "/tradelog/trades/{{ trade_date.isoformat() }}/{{ symbol }}/ch
 const statusEl  = document.getElementById("chartStatus");
 const reloadBtn = document.getElementById("reloadChart");
 
+// Detect US Eastern offset for the trade date (DST-aware)
 function isDST(d) {
   const jan = new Date(d.getFullYear(), 0, 1).getTimezoneOffset();
   const jul = new Date(d.getFullYear(), 6, 1).getTimezoneOffset();
   return d.getTimezoneOffset() < Math.max(jan, jul);
 }
-const TRADE_DATE  = new Date("{{ trade_date.isoformat() }}");
-const ET_OFFSET   = isDST(TRADE_DATE) ? -4 * 3600 : -5 * 3600;
-const adjust      = arr => arr.map(d => ({ ...d, time: d.time + ET_OFFSET }));
+const TRADE_DATE = new Date("{{ trade_date.isoformat() }}");
+const ET_OFFSET  = isDST(TRADE_DATE) ? -4 * 3600 : -5 * 3600;
 
-const sharedTimeScale = {
-  borderColor:    "#334155",
-  timeVisible:    true,
-  secondsVisible: false,
-  tickMarkFormatter: t => {
-    const d = new Date((t - ET_OFFSET) * 1000);
-    return d.getUTCHours().toString().padStart(2,"0") + ":" +
-           d.getUTCMinutes().toString().padStart(2,"0");
-  }
-};
-
-const sharedLayout = {
-  layout: { background: { color: "#0f172a" }, textColor: "#f1f5f9" },
-  grid:   { vertLines: { color: "#1e293b" }, horzLines: { color: "#1e293b" } },
-  crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
-  rightPriceScale: { borderColor: "#334155" },
-  timeScale: sharedTimeScale,
-};
+// Shift UTC timestamps → Eastern so x-axis shows ET times
+const toET = arr => arr.map(d => ({ ...d, time: d.time + ET_OFFSET }));
 
 async function loadChart() {
   statusEl.textContent = "Loading market data…";
   reloadBtn.classList.add("hidden");
-  document.getElementById("paneCandlesVol").innerHTML = "";
-  document.getElementById("paneMACD").innerHTML       = "";
+  document.getElementById("chartContainer").innerHTML = "";
 
   try {
     const resp = await fetch(CHART_URL);
     const data = await resp.json();
 
-    if (data.error) { statusEl.textContent = data.error; reloadBtn.classList.remove("hidden"); return; }
-    if (!data.candles?.length) { statusEl.textContent = "No candle data."; reloadBtn.classList.remove("hidden"); return; }
+    if (data.error)           { statusEl.textContent = data.error;        reloadBtn.classList.remove("hidden"); return; }
+    if (!data.candles?.length){ statusEl.textContent = "No candle data."; reloadBtn.classList.remove("hidden"); return; }
 
     statusEl.textContent = `${data.candles.length} candles · ${data.markers.length} executions`;
 
-    const candles    = adjust(data.candles);
-    const volume     = adjust(data.volume);
-    const ema20      = adjust(data.ema20);
-    const macdLine   = adjust(data.macd_line);
-    const signalLine = adjust(data.signal_line);
-    const histogram  = adjust(data.histogram);
-    const markers    = adjust(data.markers);
+    const candles    = toET(data.candles);
+    const volume     = toET(data.volume);
+    const ema20      = toET(data.ema20);
+    const macdLine   = toET(data.macd_line);
+    const signalLine = toET(data.signal_line);
+    const histogram  = toET(data.histogram);
+    const markers    = toET(data.markers);
 
-    const paneCVEl = document.getElementById("paneCandlesVol");
-    const paneMAEl = document.getElementById("paneMACD");
+    const container = document.getElementById("chartContainer");
 
-    // ── Chart 1: Candles + EMA20 + Volume (secondary scale) ──
-    const chart1 = LightweightCharts.createChart(paneCVEl, {
-      ...sharedLayout,
-      width:  paneCVEl.clientWidth,
-      height: 380,
+    // ── Single chart with two panes (v5 native multi-pane) ──
+    const chart = LightweightCharts.createChart(container, {
+      width:  container.clientWidth,
+      height: 540,
+      layout: { background: { color: "#0f172a" }, textColor: "#f1f5f9" },
+      grid:   { vertLines: { color: "#1e293b" }, horzLines: { color: "#1e293b" } },
+      crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
+      rightPriceScale: { borderColor: "#334155" },
+      timeScale: {
+        borderColor:    "#334155",
+        timeVisible:    true,
+        secondsVisible: false,
+        tickMarkFormatter: t => {
+          const d = new Date((t - ET_OFFSET) * 1000);
+          return d.getUTCHours().toString().padStart(2,"0") + ":" +
+                 d.getUTCMinutes().toString().padStart(2,"0");
+        }
+      },
     });
 
-    // Volume — on a separate right scale, pinned to bottom 20% of pane
-    const volSeries = chart1.addHistogramSeries({
-      priceFormat:  { type: "volume" },
-      priceScaleId: "vol",
-    });
-    chart1.priceScale("vol").applyOptions({
-      scaleMargins: { top: 0.8, bottom: 0 },
-    });
-    volSeries.setData(volume);
-
-    // Candles — on default right scale
-    const candleSeries = chart1.addCandlestickSeries({
+    // ── Pane 0 (default): Candles + Volume + EMA 20 ──
+    const candleSeries = chart.addSeries(LightweightCharts.CandlestickSeries, {
       upColor: "#22c55e", downColor: "#ef4444",
       borderUpColor: "#22c55e", borderDownColor: "#ef4444",
       wickUpColor:   "#22c55e", wickDownColor:   "#ef4444",
-      priceScaleId: "right",
     });
-    chart1.priceScale("right").applyOptions({
-      scaleMargins: { top: 0.05, bottom: 0.25 },  // leave room for volume
-    });
+    candleSeries.priceScale().applyOptions({ scaleMargins: { top: 0.05, bottom: 0.25 } });
     candleSeries.setData(candles);
-    candleSeries.setMarkers(markers);
 
-    // EMA 20
-    const emaSeries = chart1.addLineSeries({
+    // Markers via v5 createSeriesMarkers primitive
+    LightweightCharts.createSeriesMarkers(candleSeries, markers);
+
+    const emaSeries = chart.addSeries(LightweightCharts.LineSeries, {
       color: "#f59e0b", lineWidth: 1.5,
       priceLineVisible: false, lastValueVisible: false,
-      priceScaleId: "right",
     });
     emaSeries.setData(ema20);
 
-    chart1.timeScale().fitContent();
-
-    // ── Chart 2: MACD ──
-    const chart2 = LightweightCharts.createChart(paneMAEl, {
-      ...sharedLayout,
-      width:  paneMAEl.clientWidth,
-      height: 130,
+    const volSeries = chart.addSeries(LightweightCharts.HistogramSeries, {
+      priceFormat: { type: "volume" },
+      priceScaleId: "vol",
     });
+    chart.priceScale("vol").applyOptions({ scaleMargins: { top: 0.8, bottom: 0 } });
+    volSeries.setData(volume);
 
-    const histSeries = chart2.addHistogramSeries({
+    // ── Pane 1: MACD — move series to pane index 1 ──
+    const histSeries = chart.addSeries(LightweightCharts.HistogramSeries, {
       priceLineVisible: false, lastValueVisible: false,
     });
+    histSeries.moveToPane(1);
     histSeries.setData(histogram);
 
-    const macdSeries = chart2.addLineSeries({
+    const macdSeries = chart.addSeries(LightweightCharts.LineSeries, {
       color: "#38bdf8", lineWidth: 1.5,
       priceLineVisible: false, lastValueVisible: false,
     });
+    macdSeries.moveToPane(1);
     macdSeries.setData(macdLine);
 
-    const signalSeries = chart2.addLineSeries({
+    const signalSeries = chart.addSeries(LightweightCharts.LineSeries, {
       color: "#f97316", lineWidth: 1.5,
       priceLineVisible: false, lastValueVisible: false,
     });
+    signalSeries.moveToPane(1);
     signalSeries.setData(signalLine);
 
-    // Sync to chart1 time range AFTER fitContent
-    chart1.timeScale().subscribeVisibleTimeRangeChange(range => {
-      if (range) chart2.timeScale().setVisibleRange(range);
-    });
-    chart2.timeScale().subscribeVisibleTimeRangeChange(range => {
-      if (range) chart1.timeScale().setVisibleRange(range);
-    });
+    chart.timeScale().fitContent();
 
-    // Initial sync — set chart2 to match chart1
-    const range1 = chart1.timeScale().getVisibleRange();
-    if (range1) chart2.timeScale().setVisibleRange(range1);
-
-    // ── Crosshair sync ──
-    let syncingCrosshair = false;
-
-    chart1.subscribeCrosshairMove(param => {
-      if (syncingCrosshair) return;
-      syncingCrosshair = true;
-      if (param.time) {
-        chart2.setCrosshairPosition(NaN, param.time, histSeries);
-      } else {
-        chart2.clearCrosshairPosition();
-      }
-      syncingCrosshair = false;
-    });
-
-    chart2.subscribeCrosshairMove(param => {
-      if (syncingCrosshair) return;
-      syncingCrosshair = true;
-      if (param.time) {
-        chart1.setCrosshairPosition(NaN, param.time, candleSeries);
-      } else {
-        chart1.clearCrosshairPosition();
-      }
-      syncingCrosshair = false;
-    });
-
-    // ── Resize handler ──
+    // Resize
     window.addEventListener("resize", () => {
-      chart1.applyOptions({ width: paneCVEl.clientWidth });
-      chart2.applyOptions({ width: paneMAEl.clientWidth });
+      chart.applyOptions({ width: container.clientWidth });
     });
 
   } catch (e) {
