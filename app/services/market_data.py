@@ -189,7 +189,7 @@ def get_candles(symbol: str, trade_date, executions: list):
                 "color":    "#22c55e"  if is_buy else "#ef4444",
                 "shape":    "arrowUp"  if is_buy else "arrowDown",
                 "size":     1,
-                "text":     f"{int(ex.quantity)} · ${ex.price:.2f}",
+                "text":     f"{int(ex.quantity)} @ ${ex.price:.2f}",
             })
 
         # Merge markers with same time+position into one

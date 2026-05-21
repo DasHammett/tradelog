@@ -31,25 +31,21 @@ def trade_detail(trade_date, symbol):
     ods = OdsDailySymbol.query.filter_by(date=d, symbol=symbol.upper()).first_or_404()
     executions = StgExecution.query.filter_by(date=d, symbol=symbol.upper())\
                                    .order_by(StgExecution.time.asc()).all()
-    # Build a lookup of rt_trades keyed by exit_time (datetime) for the sell rows.
-    # There can be multiple rt rows with the same exit_time (partial closes), so
-    # we sum gross/net and carry entry_price from the first match.
+    # rt_by_exit: keyed by exit time → gross/net P&L for SELL rows
     rt_rows = RtTrade.query.filter_by(date=d, symbol=symbol.upper(), is_open=False).all()
-    # Key: exit_time as a time object so it matches ex.time in the template
     rt_by_exit: dict = {}
     for rt in rt_rows:
-        key = rt.exit_time.time()          # datetime → time
+        key = rt.exit_time.time()
         if key in rt_by_exit:
-            existing = rt_by_exit[key]
-            existing["gross_pnl"]    += rt.gross_pnl
-            existing["net_pnl"]      += rt.net_pnl
-            existing["quantity"]     += rt.quantity
-            # weighted avg of entry_price
-            total_qty = existing["quantity"]
+            existing  = rt_by_exit[key]
+            total_qty = existing["quantity"] + rt.quantity
             existing["entry_price"] = (
-                existing["entry_price"] * (total_qty - rt.quantity)
+                existing["entry_price"] * existing["quantity"]
                 + rt.entry_price * rt.quantity
             ) / total_qty
+            existing["gross_pnl"] += rt.gross_pnl
+            existing["net_pnl"]   += rt.net_pnl
+            existing["quantity"]   = total_qty
         else:
             rt_by_exit[key] = {
                 "entry_price": rt.entry_price,
@@ -57,9 +53,23 @@ def trade_detail(trade_date, symbol):
                 "net_pnl":     rt.net_pnl,
                 "quantity":    rt.quantity,
             }
+    # avg_by_buy: keyed by BUY execution time → running weighted avg cost after that buy
+    avg_by_buy: dict = {}
+    pos_qty      = 0.0
+    pos_avg_cost = 0.0
+    for ex in executions:
+        if ex.side == "BUY":
+            pos_avg_cost = (pos_avg_cost * pos_qty + ex.price * ex.quantity) / (pos_qty + ex.quantity)
+            pos_qty     += ex.quantity
+            avg_by_buy[ex.time] = round(pos_avg_cost, 6)
+        elif ex.side == "SELL":
+            pos_qty -= ex.quantity
+            if pos_qty < 0.0001:
+                pos_qty      = 0.0
+                pos_avg_cost = 0.0
     return render_template("trade_detail.html", ods=ods, executions=executions,
                            trade_date=d, symbol=symbol.upper(),
-                           rt_by_exit=rt_by_exit)
+                           rt_by_exit=rt_by_exit, avg_by_buy=avg_by_buy)
 @trades_bp.route("/tradelog/trades/<string:trade_date>/<string:symbol>/chart")
 def trade_chart_data(trade_date, symbol):
     """JSON endpoint — 1-min candles for TradingView with one marker per execution."""
