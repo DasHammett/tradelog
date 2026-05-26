@@ -1,7 +1,6 @@
 from flask import Flask
 from flask_sqlalchemy import SQLAlchemy
 from flask_migrate import Migrate
-from app.routes.calendar import calendar_bp
 
 db = SQLAlchemy()
 migrate = Migrate()
@@ -18,6 +17,7 @@ def create_app(config_object="config.Config"):
     from app.routes.trades import trades_bp
     from app.routes.journal import journal_bp
     from app.routes.imports import imports_bp
+    from app.routes.calendar import calendar_bp
 
     app.register_blueprint(dashboard_bp)
     app.register_blueprint(trades_bp)
