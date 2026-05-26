@@ -1,6 +1,7 @@
 from flask import Flask
 from flask_sqlalchemy import SQLAlchemy
 from flask_migrate import Migrate
+from app.routes.calendar import calendar_bp
 
 db = SQLAlchemy()
 migrate = Migrate()
@@ -22,6 +23,7 @@ def create_app(config_object="config.Config"):
     app.register_blueprint(trades_bp)
     app.register_blueprint(journal_bp)
     app.register_blueprint(imports_bp)
+    app.register_blueprint(calendar_bp)
 
     # Start background scheduler
     from app.services.scheduler import start_scheduler
