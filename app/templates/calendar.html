@@ -1,149 +1,206 @@
 {% extends "base.html" %}
 {% block title %}Calendar — Tradelog{% endblock %}
 {% block content %}
+
+{#
+  ═══════════════════════════════════════════════════════════════
+  TRADELOG DESIGN STANDARDS  (apply to all pages)
+  ───────────────────────────────────────────────────────────────
+  Background layers:
+    Page bg        #0f172a  (slate-900)
+    Card / cell    #1e293b  (slate-800)
+    Sunken / aside #0f172a  (slate-900)
+
+  Text — MINIMUM contrast rules:
+    Primary        #f1f5f9  (slate-100)  — headings, key numbers
+    Secondary      #cbd5e1  (slate-300)  — labels, sublabels, day numbers
+    Muted          #94a3b8  (slate-400)  — captions, hints (never below this)
+    NEVER use slate-500 or darker for readable text on dark backgrounds
+
+  Accent colours (always on dark bg):
+    Gain / green   #4ade80  (green-400)  — winning P&L
+    Loss / red     #f87171  (red-400)    — losing P&L
+    Brand / sky    #0ea5e9  (sky-500)    — links, active states
+
+  Day-cell tints (keep subtle — text must stay high-contrast):
+    Winning day bg  #052e16  (~green-950)
+    Losing  day bg  #450a0a  (~red-950)
+
+  Font sizes (minimum):
+    Tiny labels     13px   (legend, hints)
+    Body / sublabel 15px   (gross P&L, day numbers, badge text)
+    Stats           18px+  (column headers)
+    Hero numbers    26px+  (net P&L, week totals)
+
+  Borders:  #334155 (slate-700) between cards; #1e293b (slate-800) inside grids
+  ═══════════════════════════════════════════════════════════════
+#}
+
 <style>
+  /* ── Grid layout ── */
   .cal-grid {
     display: grid;
-    grid-template-columns: repeat(5, 1fr) 180px;
+    grid-template-columns: repeat(5, 1fr) 210px;
     gap: 0;
     border-radius: 12px;
     overflow: hidden;
-    border: 1px solid #1e293b;
+    border: 1px solid #334155;
   }
-  /* Header row */
+
+  /* ── Column headers ── */
   .cal-header {
     background: #0f172a;
-    border-bottom: 1px solid #1e293b;
-    padding: 10px 14px;
-    font-size: 11px;
+    border-bottom: 1px solid #334155;
+    padding: 14px 16px;
+    font-size: 15px;
     font-weight: 700;
     letter-spacing: 0.08em;
     text-transform: uppercase;
-    color: #64748b;
+    color: #cbd5e1;        /* slate-300 — clearly readable */
     text-align: center;
   }
   .cal-header.week-col {
-    color: #475569;
-    text-align: center;
     background: #0a111e;
-    border-left: 1px solid #1e293b;
+    border-left: 1px solid #334155;
+    color: #94a3b8;        /* slate-400 */
   }
-  /* Day cells */
+
+  /* ── Day cells ── */
   .cal-day {
-    min-height: 110px;
-    border-right: 1px solid #1e293b;
-    border-bottom: 1px solid #1e293b;
-    padding: 10px 12px;
-    position: relative;
-    background: #131f31;
-    transition: filter 0.15s;
+    min-height: 140px;
+    border-right: 1px solid #334155;
+    border-bottom: 1px solid #334155;
+    padding: 12px 14px;
+    background: #1e293b;
   }
-  .cal-day:hover { filter: brightness(1.12); }
   .cal-day.out-of-month {
-    background: #0d1825;
-    opacity: 0.45;
+    background: #131f2e;
+    opacity: 0.4;
   }
   .cal-day.is-today {
     box-shadow: inset 0 0 0 2px #0ea5e9;
   }
-  .cal-day.winner {
-    background: linear-gradient(135deg, #0d2318 0%, #0f2920 100%);
-  }
-  .cal-day.loser {
-    background: linear-gradient(135deg, #2a0d0d 0%, #300f0f 100%);
-  }
+  /* Dark tints — text must remain white/light on these */
+  .cal-day.winner { background: #052e16; }
+  .cal-day.loser  { background: #450a0a; }
+
+  /* Day number — slate-300 on plain cells, brighter on tinted */
   .day-number {
-    font-size: 11px;
+    font-size: 15px;
     font-weight: 700;
-    color: #475569;
-    margin-bottom: 8px;
-    letter-spacing: 0.04em;
+    color: #cbd5e1;        /* slate-300 */
+    margin-bottom: 10px;
+    letter-spacing: 0.03em;
   }
-  .cal-day.is-today .day-number {
-    color: #0ea5e9;
+  .cal-day.is-today .day-number { color: #38bdf8; }  /* sky-400, more visible */
+
+  /* ── Clickable stat rows ── */
+  .day-stat {
+    display: block;
+    border-radius: 6px;
+    padding: 2px 5px;
+    margin: 0 -5px 1px;
+    text-decoration: none;
+    transition: background 0.12s;
   }
+  .day-stat:hover { background: rgba(255,255,255,0.08); }
+
+  /* Net P&L — large, always very bright */
   .pnl-net {
-    font-size: 17px;
+    font-size: 26px;
     font-weight: 800;
     letter-spacing: -0.02em;
-    line-height: 1;
-    margin-bottom: 3px;
+    line-height: 1.1;
+    color: #f1f5f9;        /* slate-100 default */
   }
+  .winner .pnl-net { color: #86efac; }  /* green-300 — bright on dark green */
+  .loser  .pnl-net { color: #fca5a5; }  /* red-300   — bright on dark red   */
+
+  /* Gross — slate-300 so it's clearly readable */
   .pnl-gross {
-    font-size: 11px;
+    font-size: 15px;
     font-weight: 500;
-    color: #64748b;
-    margin-bottom: 6px;
+    color: #cbd5e1;        /* slate-300 */
+    margin-top: 2px;
   }
+
+  /* Trades badge */
   .trades-badge {
     display: inline-flex;
     align-items: center;
-    gap: 4px;
-    font-size: 10px;
+    gap: 6px;
+    font-size: 14px;
     font-weight: 600;
-    color: #94a3b8;
-    background: rgba(255,255,255,0.05);
-    padding: 2px 7px;
+    color: #cbd5e1;        /* slate-300 */
+    background: rgba(255,255,255,0.07);
+    border: 1px solid rgba(255,255,255,0.12);
+    padding: 4px 11px;
     border-radius: 99px;
-    letter-spacing: 0.03em;
+    margin-top: 6px;
+    transition: background 0.12s;
+    text-decoration: none;
   }
+  .trades-badge:hover { background: rgba(255,255,255,0.13); }
   .trades-dot {
-    width: 5px; height: 5px;
+    width: 7px; height: 7px;
     border-radius: 50%;
-    background: #475569;
+    flex-shrink: 0;
+    background: #64748b;
   }
-  .winner .pnl-net { color: #4ade80; }
-  .winner .pnl-gross { color: #166534; }
   .winner .trades-dot { background: #4ade80; }
-  .loser .pnl-net { color: #f87171; }
-  .loser .pnl-gross { color: #7f1d1d; }
-  .loser .trades-dot { background: #f87171; }
-  /* Week summary column */
+  .loser  .trades-dot { background: #f87171; }
+
+  /* ── Week summary column ── */
   .week-summary {
-    border-left: 1px solid #1e293b;
-    border-bottom: 1px solid #1e293b;
-    background: #0a111e;
-    padding: 14px 16px;
+    border-left: 1px solid #334155;
+    border-bottom: 1px solid #334155;
+    background: #0f172a;
+    padding: 16px 18px;
     display: flex;
     flex-direction: column;
     justify-content: center;
-    gap: 6px;
+    gap: 5px;
   }
-  .week-summary.winner { background: linear-gradient(180deg, #0a1f14 0%, #0c1f14 100%); }
-  .week-summary.loser  { background: linear-gradient(180deg, #1f0a0a 0%, #1f0c0c 100%); }
+  .week-summary.winner { background: #052e16; }
+  .week-summary.loser  { background: #450a0a; }
+
   .week-label {
-    font-size: 9px;
+    font-size: 12px;
     font-weight: 700;
-    letter-spacing: 0.1em;
+    letter-spacing: 0.12em;
     text-transform: uppercase;
-    color: #334155;
+    color: #94a3b8;        /* slate-400 */
     margin-bottom: 2px;
   }
   .week-net {
-    font-size: 20px;
+    font-size: 26px;
     font-weight: 800;
     letter-spacing: -0.03em;
+    line-height: 1.1;
+    color: #f1f5f9;
   }
-  .week-summary.winner .week-net { color: #4ade80; }
-  .week-summary.loser  .week-net { color: #f87171; }
-  .week-no-data .week-net { color: #334155; }
+  .week-summary.winner .week-net { color: #86efac; }
+  .week-summary.loser  .week-net { color: #fca5a5; }
+  .week-no-data .week-net        { color: #475569; }
+
   .week-gross {
-    font-size: 11px;
-    color: #334155;
+    font-size: 14px;
+    font-weight: 500;
+    color: #94a3b8;        /* slate-400 */
   }
   .week-trades {
-    font-size: 10px;
-    color: #475569;
+    font-size: 13px;
+    color: #94a3b8;        /* slate-400 */
     display: flex;
     align-items: center;
-    gap: 4px;
+    gap: 5px;
   }
   .week-bar {
     height: 3px;
     border-radius: 2px;
     background: #1e293b;
     overflow: hidden;
-    margin-top: 4px;
+    margin-top: 6px;
   }
   .week-bar-fill {
     height: 100%;
@@ -153,6 +210,7 @@
   .week-summary.winner .week-bar-fill { background: #4ade80; }
   .week-summary.loser  .week-bar-fill { background: #f87171; }
 </style>
+
 <!-- Page header -->
 <div class="flex items-center justify-between mb-6">
   <div class="flex items-center gap-4">
@@ -160,118 +218,120 @@
     <div class="flex items-center gap-1">
       <a href="?year={{ prev_year }}&month={{ prev_month }}"
          class="w-8 h-8 flex items-center justify-center rounded-lg bg-slate-800 border border-slate-700
-                text-slate-300 hover:text-white hover:bg-slate-700 transition-colors text-sm">
-        ‹
-      </a>
+                text-slate-300 hover:text-white hover:bg-slate-700 transition-colors text-sm">‹</a>
       <span class="px-4 py-1.5 rounded-lg bg-slate-800 border border-slate-700
                    text-white font-semibold text-sm min-w-[140px] text-center">
         {{ month_name }}
       </span>
       <a href="?year={{ next_year }}&month={{ next_month }}"
          class="w-8 h-8 flex items-center justify-center rounded-lg bg-slate-800 border border-slate-700
-                text-slate-300 hover:text-white hover:bg-slate-700 transition-colors text-sm">
-        ›
-      </a>
+                text-slate-300 hover:text-white hover:bg-slate-700 transition-colors text-sm">›</a>
     </div>
     <a href="?year={{ today.year }}&month={{ today.month }}"
-       class="text-xs text-sky-400 hover:text-sky-300 hover:underline transition-colors">
-      Today
-    </a>
+       class="text-sm text-sky-400 hover:text-sky-300 hover:underline transition-colors">Today</a>
   </div>
-  <!-- Month totals pill -->
+
   {% if month_trades > 0 %}
   <div class="flex items-center gap-4 bg-slate-800 border border-slate-700 rounded-xl px-5 py-2.5">
     <div class="text-center">
-      <p class="text-slate-500 text-xs uppercase tracking-wide mb-0.5">Month Net</p>
-      <p class="font-bold text-sm {% if month_net >= 0 %}text-emerald-400{% else %}text-red-400{% endif %}">
+      <p class="text-slate-300 text-sm uppercase tracking-wide mb-0.5">Month Net</p>
+      <p class="font-bold text-lg {% if month_net >= 0 %}text-green-400{% else %}text-red-400{% endif %}">
         {% if month_net >= 0 %}+{% endif %}${{ "%.2f"|format(month_net) }}
       </p>
     </div>
     <div class="w-px h-8 bg-slate-700"></div>
     <div class="text-center">
-      <p class="text-slate-500 text-xs uppercase tracking-wide mb-0.5">Gross</p>
-      <p class="font-semibold text-sm text-slate-300">${{ "%.2f"|format(month_gross) }}</p>
+      <p class="text-slate-300 text-sm uppercase tracking-wide mb-0.5">Gross</p>
+      <p class="font-semibold text-lg text-slate-200">${{ "%.2f"|format(month_gross) }}</p>
     </div>
     <div class="w-px h-8 bg-slate-700"></div>
     <div class="text-center">
-      <p class="text-slate-500 text-xs uppercase tracking-wide mb-0.5">Trades</p>
-      <p class="font-semibold text-sm text-white">{{ month_trades }}</p>
+      <p class="text-slate-300 text-sm uppercase tracking-wide mb-0.5">Trades</p>
+      <p class="font-semibold text-lg text-white">{{ month_trades }}</p>
     </div>
   </div>
   {% endif %}
 </div>
+
 <!-- Calendar grid -->
 <div class="cal-grid">
-  <!-- Column headers -->
+
   {% for day_name in ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"] %}
   <div class="cal-header">{{ day_name }}</div>
   {% endfor %}
   <div class="cal-header week-col">Week</div>
-  <!-- Weeks -->
+
   {% set max_week_abs = namespace(val=0.01) %}
   {% for w in weeks %}
     {% set abs_net = w.week_net | abs %}
     {% if abs_net > max_week_abs.val %}{% set max_week_abs.val = abs_net %}{% endif %}
   {% endfor %}
+
   {% for w in weeks %}
-    <!-- Day cells Mon–Fri -->
     {% for day in w.days %}
+    {% set date_str = day.date.isoformat() %}
+    {% set trades_url = "/tradelog/trades?from=" ~ date_str ~ "&to=" ~ date_str %}
     <div class="cal-day
                 {% if not day.in_month %}out-of-month{% endif %}
                 {% if day.has_data and day.in_month %}{% if day.is_winner %}winner{% else %}loser{% endif %}{% endif %}
                 {% if day.date == today %}is-today{% endif %}">
+
       <div class="day-number">{{ day.date.day }}</div>
+
       {% if day.has_data and day.in_month %}
-        <div class="pnl-net">
-          {% if day.net_pnl >= 0 %}+{% endif %}${{ "%.2f"|format(day.net_pnl) }}
-        </div>
-        <div class="pnl-gross">Gross ${{ "%.2f"|format(day.gross_pnl) }}</div>
-        <div class="trades-badge">
+        <a href="{{ trades_url }}" class="day-stat">
+          <div class="pnl-net">{% if day.net_pnl >= 0 %}+{% endif %}${{ "%.2f"|format(day.net_pnl) }}</div>
+        </a>
+        <a href="{{ trades_url }}" class="day-stat">
+          <div class="pnl-gross">Gross ${{ "%.2f"|format(day.gross_pnl) }}</div>
+        </a>
+        <a href="{{ trades_url }}" class="trades-badge">
           <span class="trades-dot"></span>
           {{ day.trades }} trade{% if day.trades != 1 %}s{% endif %}
-        </div>
+        </a>
       {% endif %}
     </div>
     {% endfor %}
-    <!-- Week summary cell -->
+
+    <!-- Week summary -->
     <div class="week-summary
                 {% if w.has_data %}{% if w.is_winner %}winner{% else %}loser{% endif %}{% else %}week-no-data{% endif %}">
       {% if w.has_data %}
         <div class="week-label">Week Total</div>
-        <div class="week-net">
-          {% if w.week_net >= 0 %}+{% endif %}${{ "%.2f"|format(w.week_net) }}
-        </div>
+        <div class="week-net">{% if w.week_net >= 0 %}+{% endif %}${{ "%.2f"|format(w.week_net) }}</div>
         <div class="week-gross">Gross ${{ "%.2f"|format(w.week_gross) }}</div>
         <div class="week-trades">
-          <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
-            <circle cx="5" cy="5" r="4" stroke="#475569" stroke-width="1.5"/>
+          <svg width="11" height="11" viewBox="0 0 10 10" fill="none">
+            <circle cx="5" cy="5" r="4" stroke="#94a3b8" stroke-width="1.5"/>
           </svg>
           {{ w.week_trades }} trade{% if w.week_trades != 1 %}s{% endif %}
         </div>
         <div class="week-bar">
           <div class="week-bar-fill"
-               style="width: {{ [(w.week_net | abs / max_week_abs.val * 100), 100] | min | round }}%">
-          </div>
+               style="width: {{ [(w.week_net | abs / max_week_abs.val * 100), 100] | min | round }}%"></div>
         </div>
       {% else %}
-        <div class="week-label" style="color:#1e293b;">—</div>
+        <div class="week-label" style="color:#334155;">—</div>
       {% endif %}
     </div>
   {% endfor %}
+
 </div>
+
 <!-- Legend -->
-<div class="flex items-center gap-5 mt-4 px-1">
+<div class="flex items-center gap-6 mt-5 px-1">
   <div class="flex items-center gap-2">
-    <div class="w-3 h-3 rounded-sm" style="background: linear-gradient(135deg,#0d2318,#0f2920)"></div>
-    <span class="text-slate-500 text-xs">Winning day</span>
+    <div class="w-4 h-4 rounded-sm" style="background:#052e16; border:1px solid #166534"></div>
+    <span class="text-slate-300 text-sm font-medium">Winning day</span>
   </div>
   <div class="flex items-center gap-2">
-    <div class="w-3 h-3 rounded-sm" style="background: linear-gradient(135deg,#2a0d0d,#300f0f)"></div>
-    <span class="text-slate-500 text-xs">Losing day</span>
+    <div class="w-4 h-4 rounded-sm" style="background:#450a0a; border:1px solid #7f1d1d"></div>
+    <span class="text-slate-300 text-sm font-medium">Losing day</span>
   </div>
   <div class="flex items-center gap-2">
-    <div class="w-3 h-3 rounded-sm border border-sky-500/60" style="background:#131f31"></div>
-    <span class="text-slate-500 text-xs">Today</span>
+    <div class="w-4 h-4 rounded-sm" style="background:#1e293b; border:2px solid #38bdf8"></div>
+    <span class="text-slate-300 text-sm font-medium">Today</span>
   </div>
+  <span class="text-slate-400 text-sm ml-2">↗ Click any stat to view that day's trades</span>
 </div>
 {% endblock %}
