@@ -3,7 +3,9 @@ from app.models import DailySummary, RtTrade
 from app import db
 from datetime import date, timedelta
 import calendar as cal_module
+
 calendar_bp = Blueprint("calendar", __name__)
+
 def _get_month_data(year: int, month: int) -> dict:
     """
     Returns a dict keyed by date with day stats, and a list of weeks.
