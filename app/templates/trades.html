@@ -33,7 +33,7 @@
 {% if rows %}
 <div class="bg-slate-800 border border-slate-700 rounded-xl overflow-hidden">
   <div class="overflow-x-auto">
-    <table class="w-full text-sm">
+    <table class="w-full text-sm whitespace-nowrap">
       <thead>
         <tr class="border-b border-slate-700 text-slate-400 text-xs uppercase tracking-wide">
           <th class="px-4 py-3 text-left">Symbol</th>
@@ -43,6 +43,7 @@
           <th class="px-4 py-3 text-right">Sold Qty</th>
           <th class="px-4 py-3 text-right">Avg Sell</th>
           <th class="px-4 py-3 text-right">Commission</th>
+          <th class="px-4 py-3 text-right">Broker</th>
           <th class="px-4 py-3 text-right">3rd Party</th>
           <th class="px-4 py-3 text-right">Clearing</th>
           <th class="px-4 py-3 text-right">Regulatory</th>
@@ -64,6 +65,7 @@
             {% if row.avg_sell_price > 0 %}${{ "%.4f"|format(row.avg_sell_price) }}{% else %}—{% endif %}
           </td>
           <td class="px-4 py-3 text-right text-slate-500">${{ "%.4f"|format(row.total_commission) }}</td>
+          <td class="px-4 py-3 text-right text-slate-500">${{ "%.4f"|format(bd.get("broker", 0)) }}</td>
           <td class="px-4 py-3 text-right text-slate-500">${{ "%.4f"|format(bd.get("third_party", 0)) }}</td>
           <td class="px-4 py-3 text-right text-slate-500">${{ "%.4f"|format(bd.get("clearing", 0)) }}</td>
           <td class="px-4 py-3 text-right text-slate-500">${{ "%.4f"|format(bd.get("regulatory", 0)) }}</td>

@@ -27,6 +27,7 @@ def trades():
                           OdsDailySymbol.symbol.asc()).limit(500).all()
 
     # Sum commission breakdown fields from STG for each (date, symbol) pair
+    breakdown = {}
     if rows:
         pairs = [(r.date, r.symbol) for r in rows]
         from sqlalchemy import tuple_
@@ -35,47 +36,70 @@ def trades():
         ).with_entities(
             StgExecution.date,
             StgExecution.symbol,
+            StgExecution.broker_charge,
             StgExecution.third_party_charge,
             StgExecution.clearing_charge,
             StgExecution.regulatory_charge,
         ).all()
 
-        # Aggregate per (date, symbol)
-        breakdown = defaultdict(lambda: {"third_party": 0.0, "clearing": 0.0, "regulatory": 0.0})
+        agg = defaultdict(lambda: {"broker": 0.0, "third_party": 0.0, "clearing": 0.0, "regulatory": 0.0})
         for s in stg_rows:
             key = (s.date, s.symbol)
-            breakdown[key]["third_party"]  += s.third_party_charge or 0.0
-            breakdown[key]["clearing"]     += s.clearing_charge    or 0.0
-            breakdown[key]["regulatory"]   += s.regulatory_charge  or 0.0
-    else:
-        breakdown = {}
+            agg[key]["broker"]      += s.broker_charge      or 0.0
+            agg[key]["third_party"] += s.third_party_charge or 0.0
+            agg[key]["clearing"]    += s.clearing_charge    or 0.0
+            agg[key]["regulatory"]  += s.regulatory_charge  or 0.0
+        breakdown = dict(agg)
 
     return render_template("trades.html", rows=rows, breakdown=breakdown,
                            symbol=symbol, date_from=date_from, date_to=date_to)
 
 
-def _compute_avg_position(executions):
+def _compute_exec_rows(executions):
     """
-    Compute the running weighted average position cost after each execution.
-    Returns a list of floats (one per execution, same order).
-    BUY  → updates the running avg cost
-    SELL → reduces position qty; avg cost unchanged until position closes
+    For each execution compute:
+      - avg_position_before: weighted avg cost of the open position BEFORE this execution
+        (meaningful for SELLs — this is the cost basis used for P&L)
+      - avg_position_after:  weighted avg cost AFTER this execution
+        (shown in Avg Position column — reflects current open position)
+      - gross_pnl / net_pnl: only for SELLs, using avg_position_before as cost basis
+
+    Returns list of dicts, one per execution.
     """
     pos_qty      = 0.0
     pos_avg_cost = 0.0
     result       = []
 
     for ex in executions:
+        avg_before = pos_avg_cost if pos_qty > 0.0001 else None
+
         if ex.side == "BUY":
             total_cost   = pos_avg_cost * pos_qty + ex.price * ex.quantity
             pos_qty     += ex.quantity
             pos_avg_cost = total_cost / pos_qty
+
         elif ex.side == "SELL":
             pos_qty -= ex.quantity
             if pos_qty <= 0.0001:
                 pos_qty      = 0.0
                 pos_avg_cost = 0.0
-        result.append(round(pos_avg_cost, 4) if pos_qty > 0 else None)
+
+        avg_after = pos_avg_cost if pos_qty > 0.0001 else None
+
+        # P&L only on SELLs where we had a known cost basis
+        if ex.side == "SELL" and avg_before is not None:
+            gross = round((ex.price - avg_before) * ex.quantity, 2)
+            net   = round(gross - (ex.commission or 0.0), 2)
+        else:
+            gross = None
+            net   = None
+
+        result.append({
+            "ex":        ex,
+            "avg_pos":   avg_after,   # shown in Avg Position column
+            "gross_pnl": gross,
+            "net_pnl":   net,
+        })
 
     return result
 
@@ -92,8 +116,7 @@ def trade_detail(trade_date, symbol):
     executions = StgExecution.query.filter_by(date=d, symbol=symbol.upper())\
                                    .order_by(StgExecution.time.asc()).all()
 
-    avg_positions = _compute_avg_position(executions)
-    exec_rows = list(zip(executions, avg_positions))
+    exec_rows = _compute_exec_rows(executions)
 
     return render_template("trade_detail.html", ods=ods, exec_rows=exec_rows,
                            trade_date=d, symbol=symbol.upper())

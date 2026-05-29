@@ -61,7 +61,7 @@
     </p>
   </div>
   <div class="overflow-x-auto">
-    <table class="w-full text-sm">
+    <table class="w-full text-sm whitespace-nowrap">
       <thead>
         <tr class="border-b border-slate-700 text-slate-400 text-xs uppercase tracking-wide">
           <th class="px-3 py-3 text-left">Time</th>
@@ -72,6 +72,7 @@
           <th class="px-3 py-3 text-right">Avg Position</th>
           <th class="px-3 py-3 text-right">Value</th>
           <th class="px-3 py-3 text-right">Commission</th>
+          <th class="px-3 py-3 text-right">Broker</th>
           <th class="px-3 py-3 text-right">3rd Party</th>
           <th class="px-3 py-3 text-right">Clearing</th>
           <th class="px-3 py-3 text-right">Regulatory</th>
@@ -81,10 +82,8 @@
         </tr>
       </thead>
       <tbody class="divide-y divide-slate-700/50">
-        {% set ns = namespace(pos_qty=0, pos_avg=0) %}
-        {% for ex, avg_pos in exec_rows %}
-        {% set gross = (ex.price - avg_pos) * ex.quantity if ex.side == 'SELL' and avg_pos else None %}
-        {% set net   = (gross - ex.commission) if gross is not none else None %}
+        {% for row in exec_rows %}
+        {% set ex = row.ex %}
         <tr class="{% if ex.side == 'BUY' %}bg-emerald-900/10{% else %}bg-red-900/10{% endif %}">
           <td class="px-3 py-3 text-slate-300 font-mono text-xs">{{ ex.time.strftime("%H:%M:%S") }}</td>
           <td class="px-3 py-3">
@@ -97,26 +96,30 @@
           <td class="px-3 py-3 text-right text-slate-300">{{ "%.0f"|format(ex.quantity) }}</td>
           <td class="px-3 py-3 text-right text-slate-300">${{ "%.4f"|format(ex.price) }}</td>
           <td class="px-3 py-3 text-right text-slate-400 font-mono text-xs">
-            {% if avg_pos %}${{ "%.4f"|format(avg_pos) }}{% else %}—{% endif %}
+            {% if row.avg_pos %}${{ "%.4f"|format(row.avg_pos) }}{% else %}—{% endif %}
           </td>
           <td class="px-3 py-3 text-right text-slate-300">${{ "%.2f"|format(ex.quantity * ex.price) }}</td>
-          <td class="px-3 py-3 text-right text-slate-500">${{ "%.4f"|format(ex.commission) }}</td>
+          <td class="px-3 py-3 text-right text-slate-500">${{ "%.4f"|format(ex.commission or 0) }}</td>
+          <td class="px-3 py-3 text-right text-slate-500">${{ "%.4f"|format(ex.broker_charge or 0) }}</td>
           <td class="px-3 py-3 text-right text-slate-500">${{ "%.4f"|format(ex.third_party_charge or 0) }}</td>
           <td class="px-3 py-3 text-right text-slate-500">${{ "%.4f"|format(ex.clearing_charge or 0) }}</td>
           <td class="px-3 py-3 text-right text-slate-500">${{ "%.4f"|format(ex.regulatory_charge or 0) }}</td>
           <td class="px-3 py-3 text-slate-400 text-xs">{{ ex.exchange or "—" }}</td>
           <td class="px-3 py-3 text-right text-xs
-                     {% if gross is not none %}{% if gross > 0 %}text-emerald-400{% elif gross < 0 %}text-red-400{% else %}text-slate-400{% endif %}{% else %}text-slate-600{% endif %}">
-            {% if gross is not none %}${{ "%.2f"|format(gross) }}{% else %}—{% endif %}
+                     {% if row.gross_pnl is not none %}
+                       {% if row.gross_pnl > 0 %}text-emerald-400{% elif row.gross_pnl < 0 %}text-red-400{% else %}text-slate-400{% endif %}
+                     {% else %}text-slate-600{% endif %}">
+            {% if row.gross_pnl is not none %}${{ "%.2f"|format(row.gross_pnl) }}{% else %}—{% endif %}
           </td>
           <td class="px-3 py-3 text-right font-medium text-xs
-                     {% if net is not none %}{% if net > 0 %}text-emerald-400{% elif net < 0 %}text-red-400{% else %}text-slate-400{% endif %}{% else %}text-slate-600{% endif %}">
-            {% if net is not none %}${{ "%.2f"|format(net) }}{% else %}—{% endif %}
+                     {% if row.net_pnl is not none %}
+                       {% if row.net_pnl > 0 %}text-emerald-400{% elif row.net_pnl < 0 %}text-red-400{% else %}text-slate-400{% endif %}
+                     {% else %}text-slate-600{% endif %}">
+            {% if row.net_pnl is not none %}${{ "%.2f"|format(row.net_pnl) }}{% else %}—{% endif %}
           </td>
         </tr>
         {% endfor %}
       </tbody>
-      <!-- Totals row -->
       <tfoot>
         <tr class="border-t border-slate-600 text-slate-300 text-xs font-semibold">
           <td colspan="3" class="px-3 py-3 text-slate-400">Totals</td>
@@ -129,7 +132,7 @@
             ${{ "%.2f"|format(ods.avg_buy_price * ods.bought_qty + ods.avg_sell_price * ods.sold_qty) }}
           </td>
           <td class="px-3 py-3 text-right text-slate-500">${{ "%.4f"|format(ods.total_commission) }}</td>
-          <td colspan="3" class="px-3 py-3"></td>
+          <td colspan="4" class="px-3 py-3"></td>
           <td class="px-3 py-3"></td>
           <td class="px-3 py-3 text-right
                      {% if ods.gross_pnl > 0 %}text-emerald-400{% elif ods.gross_pnl < 0 %}text-red-400{% else %}text-slate-400{% endif %}">
@@ -162,9 +165,7 @@ const ET_OFFSET   = isDST(TRADE_DATE) ? -4 * 3600 : -5 * 3600;
 const adjust      = arr => arr.map(d => ({ ...d, time: d.time + ET_OFFSET }));
 
 const sharedTimeScale = {
-  borderColor:    "#334155",
-  timeVisible:    true,
-  secondsVisible: false,
+  borderColor: "#334155", timeVisible: true, secondsVisible: false,
   tickMarkFormatter: t => {
     const d = new Date((t - ET_OFFSET) * 1000);
     return d.getUTCHours().toString().padStart(2,"0") + ":" +
@@ -184,7 +185,7 @@ async function loadChart() {
   statusEl.textContent = "Loading market data…";
   reloadBtn.classList.add("hidden");
   document.getElementById("paneCandlesVol").innerHTML = "";
-  document.getElementById("paneMACD").innerHTML       = "";
+  document.getElementById("paneMACD").innerHTML = "";
 
   try {
     const resp = await fetch(CHART_URL);
