@@ -46,9 +46,7 @@ class RtTrade(db.Model):
     gross_pnl    = db.Column(db.Float,    nullable=False)  # (exit - entry) * qty
     net_pnl      = db.Column(db.Float,    nullable=False)  # gross_pnl - commission
     is_open      = db.Column(db.Boolean,  default=False)   # True if BUY with no matching SELL yet
-    __table_args__ = (
-        db.UniqueConstraint("date", "symbol", "exit_time", name="uq_rt_date_symbol_exit"),
-    )
+
     @property
     def duration_minutes(self):
         if self.entry_time and self.exit_time:
