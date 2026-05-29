@@ -58,21 +58,20 @@ def trades():
 def _compute_exec_rows(executions):
     """
     For each execution compute:
-      - avg_position_before: weighted avg cost of the open position BEFORE this execution
-        (meaningful for SELLs — this is the cost basis used for P&L)
-      - avg_position_after:  weighted avg cost AFTER this execution
-        (shown in Avg Position column — reflects current open position)
-      - gross_pnl / net_pnl: only for SELLs, using avg_position_before as cost basis
+      - avg_pos:   running weighted avg cost after this execution (shown in Avg Position column)
+      - gross_pnl: (sell_price - avg_buy_price) * qty  — only on SELLs
+      - net_pnl:   gross_pnl - sell_commission         — only on SELLs
+                   buy commission is already baked into cost_basis per share,
+                   so net_pnl = (sell_price - cost_basis) * qty
 
-    Returns list of dicts, one per execution.
+    cost_basis is computed by _compute_rt_trades and stored on each SELL StgExecution row.
+    It equals avg_buy_price + (total_buy_commission / total_buy_qty) at the time of the sell.
     """
     pos_qty      = 0.0
     pos_avg_cost = 0.0
     result       = []
 
     for ex in executions:
-        avg_before = pos_avg_cost if pos_qty > 0.0001 else None
-
         if ex.side == "BUY":
             total_cost   = pos_avg_cost * pos_qty + ex.price * ex.quantity
             pos_qty     += ex.quantity
@@ -86,9 +85,9 @@ def _compute_exec_rows(executions):
 
         avg_after = pos_avg_cost if pos_qty > 0.0001 else None
 
-        # P&L only on SELLs where we had a known cost basis
-        if ex.side == "SELL" and avg_before is not None:
-            gross = round((ex.price - avg_before) * ex.quantity, 2)
+        # P&L on SELLs only, using cost_basis (includes buy commission per share)
+        if ex.side == "SELL" and ex.cost_basis is not None:
+            gross = round((ex.price - ex.cost_basis) * ex.quantity, 2)
             net   = round(gross - (ex.commission or 0.0), 2)
         else:
             gross = None
@@ -96,7 +95,7 @@ def _compute_exec_rows(executions):
 
         result.append({
             "ex":        ex,
-            "avg_pos":   avg_after,   # shown in Avg Position column
+            "avg_pos":   avg_after,
             "gross_pnl": gross,
             "net_pnl":   net,
         })

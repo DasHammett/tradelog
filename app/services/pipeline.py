@@ -9,14 +9,18 @@ Step 5 — Write ODS: Recompute ods_daily_symbol for affected date+symbol combos
 Step 6 — Compute RT: FIFO avg-cost matching → rt_trades
 Step 7 — Write DWH: Recompute daily_summary from rt_trades
 """
+
 import xml.etree.ElementTree as ET
 import pandas as pd
 from datetime import datetime, date
 from app import db
 from app.models import StgExecution, OdsDailySymbol, DailySummary, RtTrade
+
+
 # ---------------------------------------------------------------------------
 # Step 1 — Parse Flex XML into DataFrame
 # ---------------------------------------------------------------------------
+
 def _parse_flex_xml(content: str):
     """
     Parse a FlexQueryResponse XML string.
@@ -24,10 +28,12 @@ def _parse_flex_xml(content: str):
     Returns (DataFrame, errors).
     """
     errors = []
+
     try:
         root = ET.fromstring(content)
     except ET.ParseError as e:
         return None, [f"XML parse error: {e}"]
+
     # Build tradeID → orderType lookup from <Trade> tags
     order_type_map = {}
     for trade in root.iter("Trade"):
@@ -35,13 +41,16 @@ def _parse_flex_xml(content: str):
         ot  = trade.attrib.get("orderType", "").strip()
         if tid:
             order_type_map[tid] = ot
+
     rows = []
     for detail in root.iter("UnbundledCommissionDetail"):
         a = detail.attrib
+
         tid = a.get("tradeID", "").strip()
         if not tid:
             errors.append("UnbundledCommissionDetail missing tradeID — skipped")
             continue
+
         rows.append({
             "exec_id":            f"FLEX-{tid}",
             "symbol":             a.get("symbol",                   "").strip(),
@@ -60,18 +69,24 @@ def _parse_flex_xml(content: str):
             "order_type":         order_type_map.get(tid, ""),
             "source":             "FLEX",
         })
+
         # Back-fill open_close from Trade tag
         for trade in root.iter("Trade"):
             if trade.attrib.get("tradeID", "").strip() == tid:
                 rows[-1]["open_close"] = trade.attrib.get("openCloseIndicator", "").strip()
                 break
+
     if not rows:
         return None, errors + ["No UnbundledCommissionDetail rows found in XML"]
+
     df = pd.DataFrame(rows)
     return df, errors
+
+
 # ---------------------------------------------------------------------------
 # Step 2 — Validate & clean
 # ---------------------------------------------------------------------------
+
 def _validate_and_clean(df: pd.DataFrame):
     """
     Type-cast, normalise, and validate. Returns (clean_df, errors).
@@ -79,11 +94,13 @@ def _validate_and_clean(df: pd.DataFrame):
     """
     errors = []
     df = df.copy()
+
     # Drop rows with missing symbol
     missing_sym = df["symbol"].str.len() == 0
     if missing_sym.any():
         errors.append(f"{missing_sym.sum()} row(s) with empty symbol — skipped")
         df = df[~missing_sym].copy()
+
     # Validate side
     valid_sides = {"BUY", "SELL"}
     bad_side = ~df["side"].isin(valid_sides)
@@ -91,6 +108,7 @@ def _validate_and_clean(df: pd.DataFrame):
         for _, row in df[bad_side].iterrows():
             errors.append(f"Unknown buySell '{row.side}' for {row.symbol} — skipped")
         df = df[~bad_side].copy()
+
     # Parse dateTime — format is YYYYMMDD;HH:MM:SS
     def parse_dt(val):
         try:
@@ -100,40 +118,49 @@ def _validate_and_clean(df: pd.DataFrame):
                 return datetime.strptime(val, "%Y%m%d;%H:%M:%S")
             except ValueError:
                 return pd.NaT
+
     df["datetime"] = df["date_time"].apply(parse_dt)
     bad_dt = df["datetime"].isna()
     if bad_dt.any():
         for _, row in df[bad_dt].iterrows():
             errors.append(f"Bad dateTime '{row.date_time}' for {row.symbol} — skipped")
         df = df[~bad_dt].copy()
+
     df["date"] = df["datetime"].dt.date
     df["time"] = df["datetime"].dt.time
+
     # Numeric columns — quantity and commission can be negative in Flex XML
     for col in ["quantity", "price", "commission",
                 "broker_charge", "third_party_charge",
                 "clearing_charge", "regulatory_charge"]:
         df[col] = pd.to_numeric(df[col], errors="coerce")
+
     # qty and price are required
     bad_num = df[["quantity", "price"]].isna().any(axis=1)
     if bad_num.any():
         for _, row in df[bad_num].iterrows():
             errors.append(f"Non-numeric qty/price for {row.symbol} at {row.date_time} — skipped")
         df = df[~bad_num].copy()
-    # Flex sends negative qty for sells and negative commissions — take abs
+
+    # Flex sends negative qty for sells — take abs on quantity only.
+    # Commissions keep their sign: negative = cost, positive = rebate.
     df["quantity"]           = df["quantity"].abs()
-    df["commission"]         = df["commission"].abs().fillna(0.0)
-    df["broker_charge"]      = df["broker_charge"].abs().fillna(0.0)
-    df["third_party_charge"] = df["third_party_charge"].abs().fillna(0.0)
-    df["clearing_charge"]    = df["clearing_charge"].abs().fillna(0.0)
-    df["regulatory_charge"]  = df["regulatory_charge"].abs().fillna(0.0)
+    df["commission"]         = df["commission"].fillna(0.0)
+    df["broker_charge"]      = df["broker_charge"].fillna(0.0)
+    df["third_party_charge"] = df["third_party_charge"].fillna(0.0)
+    df["clearing_charge"]    = df["clearing_charge"].fillna(0.0)
+    df["regulatory_charge"]  = df["regulatory_charge"].fillna(0.0)
+
     # Drop zero / negative prices
     bad_price = df["price"] <= 0
     if bad_price.any():
         for _, row in df[bad_price].iterrows():
             errors.append(f"Invalid price {row.price} for {row.symbol} — skipped")
         df = df[~bad_price].copy()
+
     if df.empty:
         return df, errors
+
     # Keep only needed columns
     df = df[[
         "exec_id", "symbol", "date", "time", "side",
@@ -141,10 +168,14 @@ def _validate_and_clean(df: pd.DataFrame):
         "order_type", "exchange", "open_close",
         "broker_charge", "third_party_charge", "clearing_charge", "regulatory_charge",
     ]].copy()
+
     return df, errors
+
+
 # ---------------------------------------------------------------------------
 # Step 3 — Dedup (skip, not abort)
 # ---------------------------------------------------------------------------
+
 def _filter_duplicates(df: pd.DataFrame):
     """
     Returns (new_df, duplicate_ids).
@@ -158,9 +189,12 @@ def _filter_duplicates(df: pd.DataFrame):
     duplicates   = [eid for eid in incoming_ids if eid in existing_ids]
     new_df       = df[~df["exec_id"].isin(existing_ids)].copy()
     return new_df, duplicates
+
+
 # ---------------------------------------------------------------------------
 # Step 4 — Write STG
 # ---------------------------------------------------------------------------
+
 def _write_stg(df: pd.DataFrame):
     for _, row in df.iterrows():
         ex = StgExecution(
@@ -181,37 +215,48 @@ def _write_stg(df: pd.DataFrame):
             third_party_charge = float(row.third_party_charge),
             clearing_charge    = float(row.clearing_charge),
             regulatory_charge  = float(row.regulatory_charge),
+            cost_basis         = None,   # populated by _compute_rt_trades
         )
         db.session.add(ex)
     db.session.commit()
+
+
 # ---------------------------------------------------------------------------
 # Step 5 — Recompute ODS for affected date+symbol combos
 # ---------------------------------------------------------------------------
+
 def _recompute_ods(affected: list):
     """affected: list of (date, symbol) tuples."""
     for trade_date, symbol in affected:
         rows = StgExecution.query.filter_by(date=trade_date, symbol=symbol).all()
         if not rows:
             continue
+
         df = pd.DataFrame([{
             "side":       r.side,
             "quantity":   r.quantity,
             "price":      r.price,
             "commission": r.commission,
         } for r in rows])
+
         buys  = df[df["side"] == "BUY"]
         sells = df[df["side"] == "SELL"]
+
         bought_qty = buys["quantity"].sum()
         sold_qty   = sells["quantity"].sum()
+
         avg_buy  = (buys["price"]  * buys["quantity"]).sum()  / bought_qty if bought_qty > 0 else 0.0
         avg_sell = (sells["price"] * sells["quantity"]).sum() / sold_qty   if sold_qty   > 0 else 0.0
+
         total_commission = df["commission"].sum()
         gross_pnl = round((avg_sell * sold_qty) - (avg_buy * bought_qty), 4)
         net_pnl   = round(gross_pnl - total_commission, 4)
+
         ods = OdsDailySymbol.query.filter_by(date=trade_date, symbol=symbol).first()
         if not ods:
             ods = OdsDailySymbol(date=trade_date, symbol=symbol)
             db.session.add(ods)
+
         ods.bought_qty       = round(float(bought_qty), 4)
         ods.sold_qty         = round(float(sold_qty),   4)
         ods.avg_buy_price    = round(float(avg_buy),    6)
@@ -219,10 +264,14 @@ def _recompute_ods(affected: list):
         ods.total_commission = round(float(total_commission), 4)
         ods.gross_pnl        = gross_pnl
         ods.net_pnl          = net_pnl
+
     db.session.commit()
+
+
 # ---------------------------------------------------------------------------
 # Step 6 — FIFO avg-cost matching → rt_trades
 # ---------------------------------------------------------------------------
+
 def _compute_rt_trades(affected: list, warnings: list):
     """
     For each (date, symbol) pair, pull STG rows sorted by time and apply
@@ -230,15 +279,19 @@ def _compute_rt_trades(affected: list, warnings: list):
     """
     for trade_date, symbol in affected:
         RtTrade.query.filter_by(date=trade_date, symbol=symbol).delete()
+
         execs = StgExecution.query\
             .filter_by(date=trade_date, symbol=symbol)\
             .order_by(StgExecution.time.asc()).all()
+
         pos_qty        = 0.0
         pos_avg_cost   = 0.0
         pos_commission = 0.0
         pos_entry_time = None
+
         for ex in execs:
             exec_dt = datetime.combine(trade_date, ex.time)
+
             if ex.side == "BUY":
                 total_cost     = pos_avg_cost * pos_qty + ex.price * ex.quantity
                 pos_qty       += ex.quantity
@@ -246,6 +299,7 @@ def _compute_rt_trades(affected: list, warnings: list):
                 pos_commission += ex.commission
                 if pos_entry_time is None:
                     pos_entry_time = exec_dt
+
             elif ex.side == "SELL":
                 if pos_qty <= 0:
                     warnings.append(
@@ -253,11 +307,22 @@ def _compute_rt_trades(affected: list, warnings: list):
                         f"at {ex.time} — no open position, skipped"
                     )
                     continue
+
                 sell_qty = min(ex.quantity, pos_qty)
                 buy_commission_portion = pos_commission * (sell_qty / pos_qty)
+
+                # Cost basis per share: avg price + proportional buy commission per share
+                cost_basis_per_share = round(
+                    pos_avg_cost + (pos_commission / pos_qty), 6
+                )
+
                 gross_pnl        = round((ex.price - pos_avg_cost) * sell_qty, 6)
                 total_commission = round(buy_commission_portion + ex.commission, 6)
                 net_pnl          = round(gross_pnl - total_commission, 6)
+
+                # Write cost_basis back to the STG execution row
+                ex.cost_basis = cost_basis_per_share
+
                 rt = RtTrade(
                     date         = trade_date,
                     symbol       = symbol,
@@ -272,13 +337,16 @@ def _compute_rt_trades(affected: list, warnings: list):
                     is_open      = False,
                 )
                 db.session.add(rt)
+
                 pos_qty        -= sell_qty
                 pos_commission -= buy_commission_portion
+
                 if pos_qty <= 0.0001:
                     pos_qty        = 0.0
                     pos_avg_cost   = 0.0
                     pos_commission = 0.0
                     pos_entry_time = None
+
         # Residual open position (shouldn't happen for a day trader)
         if pos_qty > 0.0001:
             rt = RtTrade(
@@ -296,22 +364,30 @@ def _compute_rt_trades(affected: list, warnings: list):
             )
             db.session.add(rt)
             warnings.append(f"Open position {pos_qty} {symbol} on {trade_date} — no matching SELL found")
+
     db.session.commit()
+
+
 # ---------------------------------------------------------------------------
 # Step 7 — Recompute DailySummary from rt_trades
 # ---------------------------------------------------------------------------
+
 def _recompute_daily_summary(affected_dates: set):
     for trade_date in affected_dates:
         rt_rows  = RtTrade.query.filter_by(date=trade_date, is_open=False).all()
         ods_rows = OdsDailySymbol.query.filter_by(date=trade_date).all()
+
         if not rt_rows and not ods_rows:
             continue
+
         winners = [r for r in rt_rows if r.net_pnl > 0]
         losers  = [r for r in rt_rows if r.net_pnl < 0]
+
         summary = DailySummary.query.filter_by(date=trade_date).first()
         if not summary:
             summary = DailySummary(date=trade_date)
             db.session.add(summary)
+
         summary.total_trades     = len(rt_rows)
         summary.winning_trades   = len(winners)
         summary.losing_trades    = len(losers)
@@ -321,10 +397,14 @@ def _recompute_daily_summary(affected_dates: set):
         summary.win_rate         = round(len(winners) / len(rt_rows) * 100, 1) if rt_rows else 0.0
         summary.avg_winner       = round(sum(r.net_pnl for r in winners) / len(winners), 2) if winners else 0.0
         summary.avg_loser        = round(sum(r.net_pnl for r in losers)  / len(losers),  2) if losers  else 0.0
+
     db.session.commit()
+
+
 # ---------------------------------------------------------------------------
 # Main entry point — called by both file upload and Flex HTTP sync
 # ---------------------------------------------------------------------------
+
 def import_flex_xml(content: str) -> dict:
     """
     Full parse → validate → dedup → STG → ODS → RT → DailySummary pipeline.
@@ -338,32 +418,39 @@ def import_flex_xml(content: str) -> dict:
             "message": "No valid UnbundledCommissionDetail rows found in XML.",
             "errors": parse_errors, "warnings": [], "skipped": [], "new_rows": 0,
         }
+
     # Step 2 — Validate
     clean_df, validation_errors = _validate_and_clean(raw_df)
     all_errors = parse_errors + validation_errors
+
     if clean_df.empty:
         return {
             "ok": False,
             "message": f"No valid rows after validation — {len(all_errors)} error(s).",
             "errors": all_errors, "warnings": [], "skipped": [], "new_rows": 0,
         }
+
     # Step 3 — Dedup (skip, not abort)
     new_df, skipped = _filter_duplicates(clean_df)
+
     if new_df.empty:
         return {
             "ok": True,
             "message": f"Nothing new to import — all {len(skipped)} row(s) already in database.",
             "errors": all_errors, "warnings": [], "skipped": skipped, "new_rows": 0,
         }
+
     # Steps 4-7 — Write
     try:
         affected_pairs = list(new_df[["date", "symbol"]].drop_duplicates().itertuples(index=False, name=None))
         affected_dates = {d for d, _ in affected_pairs}
         rt_warnings    = []
+
         _write_stg(new_df)
         _recompute_ods(affected_pairs)
         _compute_rt_trades(affected_pairs, rt_warnings)
         _recompute_daily_summary(affected_dates)
+
         return {
             "ok":       True,
             "new_rows": len(new_df),
@@ -372,6 +459,7 @@ def import_flex_xml(content: str) -> dict:
             "errors":   [],
             "message":  None,
         }
+
     except Exception as e:
         db.session.rollback()
         return {
