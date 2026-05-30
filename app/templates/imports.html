@@ -1,27 +1,22 @@
 {% extends "base.html" %}
 {% block title %}Import — Tradelog{% endblock %}
-
 {% block content %}
 <h1 class="text-2xl font-bold text-white mb-6">Import Trades</h1>
-
 {% if result %}
-  {# ── Success ── #}
   {% if result.ok %}
   <div class="mb-6 rounded-xl border border-green-700 bg-green-900/20 p-4">
     <p class="text-green-400 font-semibold">
-      ✓ 
-    {% if result.message %}
-      {{ result.message }}
-    {% else %}
-      Import successful — {{ result.new_rows }} execution(s) written to STG
-      {% if result.file_type %}from {{ result.file_type }} file{% endif %}.
-    {% endif %}
+      ✓
+      {% if result.message %}
+        {{ result.message }}
+      {% else %}
+        Import successful — {{ result.new_rows }} new execution(s) written
+        {% if result.skipped %}· {{ result.skipped|length }} duplicate(s) skipped{% endif %}.
+      {% endif %}
     </p>
     {% if result.warnings %}
     <details class="mt-3">
-      <summary class="text-yellow-400 text-sm cursor-pointer">
-        ⚠ {{ result.warnings|length }} non-fatal warning(s)
-      </summary>
+      <summary class="text-yellow-400 text-sm cursor-pointer">⚠ {{ result.warnings|length }} warning(s)</summary>
       <ul class="mt-2 space-y-1">
         {% for w in result.warnings %}
         <li class="text-yellow-300 text-xs font-mono">{{ w }}</li>
@@ -30,49 +25,15 @@
     </details>
     {% endif %}
   </div>
-
-  {# ── Duplicate abort ── #}
-  {% elif result.duplicates %}
-  <div class="mb-6 rounded-xl border border-yellow-600 bg-yellow-900/20 p-4">
-    <p class="text-yellow-400 font-semibold mb-2">
-      ⚠ Import aborted — {{ result.duplicates|length }} duplicate(s) already in database.
-    </p>
-    <p class="text-slate-400 text-sm mb-3">
-      No trades were written. Remove the duplicates from your file and re-upload,
-      or export a narrower date range from IBKR.
-    </p>
-    {% if result.parsed_count is defined %}
-    <p class="text-slate-500 text-xs mb-3">File contained {{ result.parsed_count }} trade(s) total.</p>
-    {% endif %}
-    <details>
-      <summary class="text-yellow-400 text-sm cursor-pointer">Show duplicate IDs</summary>
-      <ul class="mt-2 space-y-1 max-h-48 overflow-y-auto">
-        {% for d in result.duplicates %}
-        <li class="text-yellow-300 text-xs font-mono">{{ d }}</li>
-        {% endfor %}
-      </ul>
-    </details>
-    {% if result.errors %}
-    <details class="mt-3">
-      <summary class="text-slate-400 text-sm cursor-pointer">Parse warnings ({{ result.errors|length }})</summary>
-      <ul class="mt-2 space-y-1">
-        {% for e in result.errors %}
-        <li class="text-slate-400 text-xs font-mono">{{ e }}</li>
-        {% endfor %}
-      </ul>
-    </details>
-    {% endif %}
-  </div>
-
-  {# ── Validation / parse error ── #}
   {% else %}
   <div class="mb-6 rounded-xl border border-red-700 bg-red-900/20 p-4">
     <p class="text-red-400 font-semibold mb-2">✗ {{ result.message }}</p>
+    {% if result.skipped %}
+    <p class="text-slate-400 text-sm mb-2">{{ result.skipped|length }} row(s) skipped as duplicates before the error occurred.</p>
+    {% endif %}
     {% if result.errors %}
     <details {% if result.errors|length <= 5 %}open{% endif %}>
-      <summary class="text-red-300 text-sm cursor-pointer">
-        Show {{ result.errors|length }} error(s)
-      </summary>
+      <summary class="text-red-300 text-sm cursor-pointer">Show {{ result.errors|length }} error(s)</summary>
       <ul class="mt-2 space-y-1 max-h-48 overflow-y-auto">
         {% for e in result.errors %}
         <li class="text-red-300 text-xs font-mono">{{ e }}</li>
@@ -83,25 +44,22 @@
   </div>
   {% endif %}
 {% endif %}
-
 <div class="grid lg:grid-cols-2 gap-6">
-
-  <!-- TLG / CSV Upload -->
+  <!-- XML File Upload -->
   <div class="card">
-    <h2 class="text-white font-semibold text-lg mb-1">Upload Trade File</h2>
+    <h2 class="text-white font-semibold text-lg mb-1">Upload Flex XML File</h2>
     <p class="text-slate-400 text-sm mb-1">
-      Supports <span class="text-brand font-medium">.tlg</span> (Third-Party TradeLog)
-      and <span class="text-brand font-medium">.csv</span> (Activity Statement) files
-      from IBKR.
+      Upload a <span class="text-brand font-medium">Flex Query XML</span> file exported from IBKR.
+      Use this for historical backfills or manual imports.
     </p>
     <p class="text-slate-500 text-xs mb-4">
-      File is fully validated and checked for duplicates before anything is written to the database.
+      Duplicates are automatically skipped — safe to re-upload overlapping date ranges.
     </p>
     <form method="POST" enctype="multipart/form-data">
       <input type="hidden" name="action" value="file_upload" />
       <label class="block mb-4">
-        <span class="text-slate-400 text-sm block mb-1">Select file (.tlg or .csv)</span>
-        <input type="file" name="file" accept=".tlg,.csv,.txt"
+        <span class="text-slate-400 text-sm block mb-1">Select Flex XML file (.xml)</span>
+        <input type="file" name="file" accept=".xml"
                class="block w-full text-sm text-slate-400
                       file:mr-3 file:py-2 file:px-4 file:rounded-lg file:border-0
                       file:bg-slate-700 file:text-white hover:file:bg-slate-600 cursor-pointer" />
@@ -112,51 +70,85 @@
       </button>
     </form>
   </div>
-
   <!-- IBKR Flex Sync -->
   <div class="card">
     <h2 class="text-white font-semibold text-lg mb-1">IBKR Flex Query Sync</h2>
-    <p class="text-slate-400 text-sm mb-4">
-      Automatically pulls trades from IBKR via the Flex Web Service.
+    <p class="text-slate-400 text-sm mb-1">
+      Pulls last business day's trades directly from IBKR via the Flex Web Service.
       Requires <code class="text-brand">FLEX_TOKEN</code> and
       <code class="text-brand">FLEX_QUERY_ID</code> in your <code>.env</code> file.
     </p>
-    <form method="POST">
+    <p class="text-slate-500 text-xs mb-4">
+      May take up to 60 seconds while IBKR generates the statement. Please wait.
+    </p>
+    <form method="POST" id="flexSyncForm">
       <input type="hidden" name="action" value="flex_sync" />
-      <button type="submit"
+      <button type="submit" id="flexSyncBtn"
               class="bg-slate-700 hover:bg-slate-600 text-white px-5 py-2.5 rounded-lg font-medium transition-colors">
         Sync Now
       </button>
+      <span id="flexSyncSpinner" class="hidden ml-3 text-slate-400 text-sm">Fetching from IBKR…</span>
     </form>
-    <p class="mt-3 text-slate-500 text-xs">Auto-sync runs daily via scheduler.</p>
-  </div>
-
-</div>
-
-  <!-- Recompute ODS -->
-  <div class="card mt-6">
-    <h2 class="text-white font-semibold text-lg mb-1">Recompute ODS &amp; Dashboard</h2>
-    <p class="text-slate-400 text-sm mb-4">
-      Recomputes all ODS aggregations and daily summaries from the raw STG data.
-      Use this after fixing an import issue or if dashboard numbers look wrong.
+    <p class="mt-3 text-slate-500 text-xs">
+      Also runs automatically via the daily scheduler (see <code>FLEX_SYNC_HOUR</code> in .env).
     </p>
-    <form method="POST">
-      <input type="hidden" name="action" value="recompute_ods" />
-      <button type="submit"
-              class="bg-slate-700 hover:bg-slate-600 text-white px-5 py-2.5 rounded-lg font-medium transition-colors">
-        Recompute ODS
-      </button>
-    </form>
   </div>
+</div>
+<!-- Recompute ODS -->
 <div class="card mt-6">
-  <h2 class="text-white font-semibold mb-3">How to download your TLG file from IBKR</h2>
+  <h2 class="text-white font-semibold text-lg mb-1">Recompute ODS &amp; Dashboard</h2>
+  <p class="text-slate-400 text-sm mb-4">
+    Recomputes all ODS aggregations, RT trades, and daily summaries from raw STG data.
+    Use this if dashboard numbers look wrong after an import.
+  </p>
+  <form method="POST">
+    <input type="hidden" name="action" value="recompute_ods" />
+    <button type="submit"
+            class="bg-slate-700 hover:bg-slate-600 text-white px-5 py-2.5 rounded-lg font-medium transition-colors">
+      Recompute ODS
+    </button>
+  </form>
+</div>
+<!-- How to export from IBKR -->
+<div class="card mt-6">
+  <h2 class="text-white font-semibold mb-3">How to export a Flex XML file from IBKR</h2>
   <ol class="text-slate-400 text-sm space-y-2 list-decimal list-inside">
     <li>Log in to IBKR Account Management</li>
-    <li>Go to <strong>Performance &amp; Reports → Statements</strong></li>
-    <li>On the right side, look for <strong>Third Party Downloads</strong></li>
-    <li>Select <strong>TradeLog</strong> from the dropdown</li>
-    <li>Choose your date range and click <strong>Run</strong></li>
-    <li>Download the <code class="text-brand">.tlg</code> file and upload it above</li>
+    <li>Go to <strong>Performance &amp; Reports → Flex Queries</strong></li>
+    <li>Find your <strong>Commissions</strong> query and click <strong>Run</strong></li>
+    <li>Set your desired date range (e.g. for a historical backfill)</li>
+    <li>Select <strong>XML</strong> format and click <strong>Run</strong></li>
+    <li>Download the <code class="text-brand">.xml</code> file and upload it above</li>
   </ol>
 </div>
+<!-- Reset Database -->
+<div class="card mt-6 border-red-900/50">
+  <h2 class="text-red-400 font-semibold text-lg mb-1">Reset Database</h2>
+  <p class="text-slate-400 text-sm mb-4">
+    Permanently deletes <strong class="text-white">all data</strong> — trades, journal entries, and all aggregations.
+    This cannot be undone. Use before a clean historical reimport.
+  </p>
+  <form method="POST">
+    <input type="hidden" name="action" value="reset_db" />
+    <div class="flex items-center gap-3 mb-3">
+      <input type="text" name="confirm_reset" placeholder="Type RESET to confirm"
+             class="bg-slate-900 border border-red-800 rounded-lg px-3 py-2 text-sm text-white w-52
+                    focus:outline-none focus:border-red-500 placeholder:text-slate-600" />
+      <button type="submit"
+              class="bg-red-700 hover:bg-red-600 text-white px-5 py-2.5 rounded-lg font-medium transition-colors">
+        Delete All Data
+      </button>
+    </div>
+    <p class="text-slate-600 text-xs">Tables cleared: stg_executions, ods_daily_symbol, rt_trades, daily_summary, journal_entries</p>
+  </form>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+document.getElementById("flexSyncForm").addEventListener("submit", function() {
+  document.getElementById("flexSyncBtn").disabled = true;
+  document.getElementById("flexSyncBtn").textContent = "Syncing…";
+  document.getElementById("flexSyncSpinner").classList.remove("hidden");
+});
+</script>
 {% endblock %}

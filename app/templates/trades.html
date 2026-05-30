@@ -1,11 +1,9 @@
 {% extends "base.html" %}
 {% block title %}Sessions — Tradelog{% endblock %}
-
 {% block content %}
 <div class="flex items-center justify-between mb-6">
   <h1 class="text-2xl font-bold text-white">Sessions</h1>
 </div>
-
 <!-- Filters -->
 <form method="GET" class="flex gap-3 mb-6 flex-wrap items-end">
   <div>
@@ -29,7 +27,6 @@
   </button>
   <a href="/tradelog/trades" class="text-slate-400 hover:text-white px-3 py-2 text-sm">Clear</a>
 </form>
-
 {% if rows %}
 <div class="bg-slate-800 border border-slate-700 rounded-xl overflow-hidden">
   <div class="overflow-x-auto">
@@ -64,11 +61,11 @@
           <td class="px-4 py-3 text-right text-slate-300">
             {% if row.avg_sell_price > 0 %}${{ "%.4f"|format(row.avg_sell_price) }}{% else %}—{% endif %}
           </td>
-          <td class="px-4 py-3 text-right text-slate-500">${{ "%.4f"|format(row.total_commission) }}</td>
-          <td class="px-4 py-3 text-right text-slate-500">${{ "%.4f"|format(bd.get("broker", 0)) }}</td>
-          <td class="px-4 py-3 text-right text-slate-500">${{ "%.4f"|format(bd.get("third_party", 0)) }}</td>
-          <td class="px-4 py-3 text-right text-slate-500">${{ "%.4f"|format(bd.get("clearing", 0)) }}</td>
-          <td class="px-4 py-3 text-right text-slate-500">${{ "%.4f"|format(bd.get("regulatory", 0)) }}</td>
+          <td class="px-4 py-3 text-right {% if row.total_commission > 0 %}text-red-400{% elif row.total_commission < 0 %}text-emerald-400{% else %}text-slate-500{% endif %}">${{ "%.4f"|format(row.total_commission) }}</td>
+          {% set v = bd.get("broker", 0) %}<td class="px-4 py-3 text-right {% if v > 0 %}text-red-400{% elif v < 0 %}text-emerald-400{% else %}text-slate-500{% endif %}">${{ "%.4f"|format(v) }}</td>
+          {% set v = bd.get("third_party", 0) %}<td class="px-4 py-3 text-right {% if v > 0 %}text-red-400{% elif v < 0 %}text-emerald-400{% else %}text-slate-500{% endif %}">${{ "%.4f"|format(v) }}</td>
+          {% set v = bd.get("clearing", 0) %}<td class="px-4 py-3 text-right {% if v > 0 %}text-red-400{% elif v < 0 %}text-emerald-400{% else %}text-slate-500{% endif %}">${{ "%.4f"|format(v) }}</td>
+          {% set v = bd.get("regulatory", 0) %}<td class="px-4 py-3 text-right {% if v > 0 %}text-red-400{% elif v < 0 %}text-emerald-400{% else %}text-slate-500{% endif %}">${{ "%.4f"|format(v) }}</td>
           <td class="px-4 py-3 text-right font-medium
                      {% if row.gross_pnl > 0 %}text-emerald-400{% elif row.gross_pnl < 0 %}text-red-400{% else %}text-slate-400{% endif %}">
             ${{ "%.2f"|format(row.gross_pnl) }}

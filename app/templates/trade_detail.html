@@ -1,13 +1,11 @@
 {% extends "base.html" %}
 {% block title %}{{ symbol }} {{ trade_date }} — Tradelog{% endblock %}
-
 {% block content %}
 <div class="flex items-center gap-3 mb-6">
   <a href="/tradelog/trades" class="text-slate-400 hover:text-white text-sm">← Trades</a>
   <h1 class="text-2xl font-bold text-white">{{ symbol }}</h1>
   <span class="text-slate-400 text-sm">{{ trade_date.strftime("%A, %B %d %Y") }}</span>
 </div>
-
 <!-- ODS Summary cards -->
 <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
   <div class="bg-slate-800 border border-slate-700 rounded-xl p-4">
@@ -31,7 +29,6 @@
     <p class="text-slate-500 text-xs">Gross: ${{ "%.2f"|format(ods.gross_pnl) }}</p>
   </div>
 </div>
-
 <!-- TradingView chart -->
 <div class="bg-slate-800 border border-slate-700 rounded-xl p-4 mb-6">
   <div class="flex items-center justify-between mb-3">
@@ -52,7 +49,6 @@
   <div class="text-slate-500 text-xs px-1 mt-2 mb-0.5">MACD (12, 26, 9)</div>
   <div id="paneMACD" class="w-full rounded-lg overflow-hidden"></div>
 </div>
-
 <!-- Executions table -->
 <div class="bg-slate-800 border border-slate-700 rounded-xl overflow-hidden">
   <div class="px-4 py-3 border-b border-slate-700">
@@ -95,15 +91,15 @@
           <td class="px-3 py-3 text-slate-400 text-xs">{{ ex.order_type or "—" }}</td>
           <td class="px-3 py-3 text-right text-slate-300">{{ "%.0f"|format(ex.quantity) }}</td>
           <td class="px-3 py-3 text-right text-slate-300">${{ "%.4f"|format(ex.price) }}</td>
-          <td class="px-3 py-3 text-right text-slate-400 font-mono text-xs">
+          <td class="px-3 py-3 text-right text-slate-300">
             {% if row.avg_pos %}${{ "%.4f"|format(row.avg_pos) }}{% else %}—{% endif %}
           </td>
           <td class="px-3 py-3 text-right text-slate-300">${{ "%.2f"|format(ex.quantity * ex.price) }}</td>
-          <td class="px-3 py-3 text-right text-slate-500">${{ "%.4f"|format(ex.commission or 0) }}</td>
-          <td class="px-3 py-3 text-right text-slate-500">${{ "%.4f"|format(ex.broker_charge or 0) }}</td>
-          <td class="px-3 py-3 text-right text-slate-500">${{ "%.4f"|format(ex.third_party_charge or 0) }}</td>
-          <td class="px-3 py-3 text-right text-slate-500">${{ "%.4f"|format(ex.clearing_charge or 0) }}</td>
-          <td class="px-3 py-3 text-right text-slate-500">${{ "%.4f"|format(ex.regulatory_charge or 0) }}</td>
+          {% set c = ex.commission or 0 %}<td class="px-3 py-3 text-right {% if c > 0 %}text-red-400{% elif c < 0 %}text-emerald-400{% else %}text-slate-500{% endif %}">${{ "%.4f"|format(c) }}</td>
+          {% set c = ex.broker_charge or 0 %}<td class="px-3 py-3 text-right {% if c > 0 %}text-red-400{% elif c < 0 %}text-emerald-400{% else %}text-slate-500{% endif %}">${{ "%.4f"|format(c) }}</td>
+          {% set c = ex.third_party_charge or 0 %}<td class="px-3 py-3 text-right {% if c > 0 %}text-red-400{% elif c < 0 %}text-emerald-400{% else %}text-slate-500{% endif %}">${{ "%.4f"|format(c) }}</td>
+          {% set c = ex.clearing_charge or 0 %}<td class="px-3 py-3 text-right {% if c > 0 %}text-red-400{% elif c < 0 %}text-emerald-400{% else %}text-slate-500{% endif %}">${{ "%.4f"|format(c) }}</td>
+          {% set c = ex.regulatory_charge or 0 %}<td class="px-3 py-3 text-right {% if c > 0 %}text-red-400{% elif c < 0 %}text-emerald-400{% else %}text-slate-500{% endif %}">${{ "%.4f"|format(c) }}</td>
           <td class="px-3 py-3 text-slate-400 text-xs">{{ ex.exchange or "—" }}</td>
           <td class="px-3 py-3 text-right text-xs
                      {% if row.gross_pnl is not none %}
@@ -148,13 +144,11 @@
   </div>
 </div>
 {% endblock %}
-
 {% block scripts %}
 <script>
 const CHART_URL = "/tradelog/trades/{{ trade_date.isoformat() }}/{{ symbol }}/chart";
 const statusEl  = document.getElementById("chartStatus");
 const reloadBtn = document.getElementById("reloadChart");
-
 function isDST(d) {
   const jan = new Date(d.getFullYear(), 0, 1).getTimezoneOffset();
   const jul = new Date(d.getFullYear(), 6, 1).getTimezoneOffset();
@@ -163,7 +157,6 @@ function isDST(d) {
 const TRADE_DATE  = new Date("{{ trade_date.isoformat() }}");
 const ET_OFFSET   = isDST(TRADE_DATE) ? -4 * 3600 : -5 * 3600;
 const adjust      = arr => arr.map(d => ({ ...d, time: d.time + ET_OFFSET }));
-
 const sharedTimeScale = {
   borderColor: "#334155", timeVisible: true, secondsVisible: false,
   tickMarkFormatter: t => {
@@ -172,7 +165,6 @@ const sharedTimeScale = {
            d.getUTCMinutes().toString().padStart(2,"0");
   }
 };
-
 const sharedLayout = {
   layout: { background: { color: "#0f172a" }, textColor: "#f1f5f9" },
   grid:   { vertLines: { color: "#1e293b" }, horzLines: { color: "#1e293b" } },
@@ -180,22 +172,17 @@ const sharedLayout = {
   rightPriceScale: { borderColor: "#334155" },
   timeScale: sharedTimeScale,
 };
-
 async function loadChart() {
   statusEl.textContent = "Loading market data…";
   reloadBtn.classList.add("hidden");
   document.getElementById("paneCandlesVol").innerHTML = "";
   document.getElementById("paneMACD").innerHTML = "";
-
   try {
     const resp = await fetch(CHART_URL);
     const data = await resp.json();
-
     if (data.error) { statusEl.textContent = data.error; reloadBtn.classList.remove("hidden"); return; }
     if (!data.candles?.length) { statusEl.textContent = "No candle data."; reloadBtn.classList.remove("hidden"); return; }
-
     statusEl.textContent = `${data.candles.length} candles · ${data.markers.length} executions`;
-
     const candles    = adjust(data.candles);
     const volume     = adjust(data.volume);
     const ema20      = adjust(data.ema20);
@@ -203,18 +190,14 @@ async function loadChart() {
     const signalLine = adjust(data.signal_line);
     const histogram  = adjust(data.histogram);
     const markers    = adjust(data.markers);
-
     const paneCVEl = document.getElementById("paneCandlesVol");
     const paneMAEl = document.getElementById("paneMACD");
-
     const chart1 = LightweightCharts.createChart(paneCVEl, {
       ...sharedLayout, width: paneCVEl.clientWidth, height: 380,
     });
-
     const volSeries = chart1.addHistogramSeries({ priceFormat: { type: "volume" }, priceScaleId: "vol" });
     chart1.priceScale("vol").applyOptions({ scaleMargins: { top: 0.8, bottom: 0 } });
     volSeries.setData(volume);
-
     const candleSeries = chart1.addCandlestickSeries({
       upColor: "#22c55e", downColor: "#ef4444",
       borderUpColor: "#22c55e", borderDownColor: "#ef4444",
@@ -224,32 +207,25 @@ async function loadChart() {
     chart1.priceScale("right").applyOptions({ scaleMargins: { top: 0.05, bottom: 0.25 } });
     candleSeries.setData(candles);
     candleSeries.setMarkers(markers);
-
     const emaSeries = chart1.addLineSeries({
       color: "#f59e0b", lineWidth: 1.5,
       priceLineVisible: false, lastValueVisible: false, priceScaleId: "right",
     });
     emaSeries.setData(ema20);
     chart1.timeScale().fitContent();
-
     const chart2 = LightweightCharts.createChart(paneMAEl, {
       ...sharedLayout, width: paneMAEl.clientWidth, height: 130,
     });
-
     const histSeries = chart2.addHistogramSeries({ priceLineVisible: false, lastValueVisible: false });
     histSeries.setData(histogram);
-
     const macdSeries = chart2.addLineSeries({ color: "#38bdf8", lineWidth: 1.5, priceLineVisible: false, lastValueVisible: false });
     macdSeries.setData(macdLine);
-
     const signalSeries = chart2.addLineSeries({ color: "#f97316", lineWidth: 1.5, priceLineVisible: false, lastValueVisible: false });
     signalSeries.setData(signalLine);
-
     chart1.timeScale().subscribeVisibleTimeRangeChange(range => { if (range) chart2.timeScale().setVisibleRange(range); });
     chart2.timeScale().subscribeVisibleTimeRangeChange(range => { if (range) chart1.timeScale().setVisibleRange(range); });
     const range1 = chart1.timeScale().getVisibleRange();
     if (range1) chart2.timeScale().setVisibleRange(range1);
-
     let syncingCrosshair = false;
     chart1.subscribeCrosshairMove(param => {
       if (syncingCrosshair) return; syncingCrosshair = true;
@@ -263,18 +239,15 @@ async function loadChart() {
       else chart1.clearCrosshairPosition();
       syncingCrosshair = false;
     });
-
     window.addEventListener("resize", () => {
       chart1.applyOptions({ width: paneCVEl.clientWidth });
       chart2.applyOptions({ width: paneMAEl.clientWidth });
     });
-
   } catch (e) {
     statusEl.textContent = "Error: " + e.message;
     reloadBtn.classList.remove("hidden");
   }
 }
-
 reloadBtn.addEventListener("click", loadChart);
 loadChart();
 </script>
