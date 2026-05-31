@@ -1,80 +1,283 @@
-se.html" %}
+{% extends "base.html" %}
 {% block title %}{{ symbol }} {{ trade_date }} — Tradelog{% endblock %}
+
 {% block content %}
 <div class="flex items-center gap-3 mb-6">
-     <a href="/tradelog/trades" class="text-slate-400 hover:text-white text-sm">← Trades</a>
-       <h1 class="text-2xl font-bold text-white">{{ symbol }}</h1>
-         <span class="text-slate-400 text-sm">{{ trade_date.strftime("%A, %B %d %Y") }}</span>
+  <a href="/tradelog/trades" class="text-slate-400 hover:text-white text-sm">← Trades</a>
+  <h1 class="text-2xl font-bold text-white">{{ symbol }}</h1>
+  <span class="text-slate-400 text-sm">{{ trade_date.strftime("%A, %B %d %Y") }}</span>
 </div>
+
 <!-- ODS Summary cards: 6 across -->
 <div class="grid grid-cols-2 lg:grid-cols-6 gap-4 mb-6">
-     <div class="bg-slate-800 border border-slate-700 rounded-xl p-4">
-            <p class="text-slate-400 text-xs uppercase tracking-wide mb-1">Net P&amp;L</p>
-                <p class="text-2xl font-bold {% if ods.net_pnl > 0 %}text-emerald-400{% elif ods.net_pnl < 0 %}text-red-400{% else %}text-slate-300{% endif %}">
-                      ${{ "%.2f"|format(ods.net_pnl) }}
-                          </p>
-                            </div>
-                              <div class="bg-slate-800 border border-slate-700 rounded-xl p-4">
-                                     <p class="text-slate-400 text-xs uppercase tracking-wide mb-1">Gross P&amp;L</p>
-                                         <p class="text-2xl font-bold {% if ods.gross_pnl > 0 %}text-emerald-400{% elif ods.gross_pnl < 0 %}text-red-400{% else %}text-slate-300{% endif %}">
-                                               ${{ "%.2f"|format(ods.gross_pnl) }}
-                                                   </p>
-                                                     </div>
-                                                       <div class="bg-slate-800 border border-slate-700 rounded-xl p-4">
-                                                              <p class="text-slate-400 text-xs uppercase tracking-wide mb-1">Avg Buy</p>
-                                                                  <p class="text-2xl font-bold text-white">${{ "%.4f"|format(ods.avg_buy_price) }}</p>
-                                                                    </div>
-                                                                      <div class="bg-slate-800 border border-slate-700 rounded-xl p-4">
-                                                                             <p class="text-slate-400 text-xs uppercase tracking-wide mb-1">Avg Sell</p>
-                                                                                 <p class="text-2xl font-bold text-white">${{ "%.4f"|format(ods.avg_sell_price) }}</p>
-                                                                                   </div>
-                                                                                     <div class="bg-slate-800 border border-slate-700 rounded-xl p-4">
-                                                                                            <p class="text-slate-400 text-xs uppercase tracking-wide mb-1">Quantity Traded</p>
-                                                                                                <p class="text-2xl font-bold text-white">{{ "%.0f"|format(ods.bought_qty) }}</p>
-                                                                                                  </div>
-                                                                                                    <div class="bg-slate-800 border border-slate-700 rounded-xl p-4">
-                                                                                                           <p class="text-slate-400 text-xs uppercase tracking-wide mb-1">Commission</p>
-                                                                                                               <p class="text-2xl font-bold text-white">${{ "%.4f"|format(ods.total_commission) }}</p>
-                                                                                                                 </div>
+  <div class="bg-slate-800 border border-slate-700 rounded-xl p-4">
+    <p class="text-slate-400 text-xs uppercase tracking-wide mb-1">Net P&amp;L</p>
+    <p class="text-2xl font-bold {% if ods.net_pnl > 0 %}text-emerald-400{% elif ods.net_pnl < 0 %}text-red-400{% else %}text-slate-300{% endif %}">
+      ${{ "%.2f"|format(ods.net_pnl) }}
+    </p>
+  </div>
+  <div class="bg-slate-800 border border-slate-700 rounded-xl p-4">
+    <p class="text-slate-400 text-xs uppercase tracking-wide mb-1">Gross P&amp;L</p>
+    <p class="text-2xl font-bold {% if ods.gross_pnl > 0 %}text-emerald-400{% elif ods.gross_pnl < 0 %}text-red-400{% else %}text-slate-300{% endif %}">
+      ${{ "%.2f"|format(ods.gross_pnl) }}
+    </p>
+  </div>
+  <div class="bg-slate-800 border border-slate-700 rounded-xl p-4">
+    <p class="text-slate-400 text-xs uppercase tracking-wide mb-1">Avg Buy</p>
+    <p class="text-2xl font-bold text-white">${{ "%.4f"|format(ods.avg_buy_price) }}</p>
+  </div>
+  <div class="bg-slate-800 border border-slate-700 rounded-xl p-4">
+    <p class="text-slate-400 text-xs uppercase tracking-wide mb-1">Avg Sell</p>
+    <p class="text-2xl font-bold text-white">${{ "%.4f"|format(ods.avg_sell_price) }}</p>
+  </div>
+  <div class="bg-slate-800 border border-slate-700 rounded-xl p-4">
+    <p class="text-slate-400 text-xs uppercase tracking-wide mb-1">Quantity Traded</p>
+    <p class="text-2xl font-bold text-white">{{ "%.0f"|format(ods.bought_qty) }}</p>
+  </div>
+  <div class="bg-slate-800 border border-slate-700 rounded-xl p-4">
+    <p class="text-slate-400 text-xs uppercase tracking-wide mb-1">Commission</p>
+    <p class="text-2xl font-bold text-white">${{ "%.4f"|format(ods.total_commission) }}</p>
+  </div>
 </div>
+
 <!-- TradingView chart — single chart, two panes (LightweightCharts v5) -->
 <div class="bg-slate-800 border border-slate-700 rounded-xl p-4 mb-6">
-     <div class="flex items-center justify-between mb-3">
-            <p class="text-white font-semibold">1-Minute Chart — {{ symbol }}
-                  <span class="text-amber-400 text-xs ml-2">── EMA 20</span>
-                        <span class="text-sky-400 text-xs ml-2">── MACD</span>
-                              <span class="text-orange-400 text-xs ml-2">── Signal</span>
-                                  </p>
-                                      <div class="flex items-center gap-3">
-                                               <span id="chartStatus" class="text-slate-400 text-xs"></span>
-                                                     <button id="reloadChart"
-                                                                           class="bg-slate-700 hover:bg-slate-600 text-white px-3 py-1.5 rounded-lg text-xs font-medium transition-colors hidden">
-                                                                Reload
-                                                                      </button>
-                                                                          </div>
-                                                                            </div>
-                                                                              <div id="chartContainer" class="w-full rounded-lg overflow-hidden"></div>
+  <div class="flex items-center justify-between mb-3">
+    <p class="text-white font-semibold">1-Minute Chart — {{ symbol }}
+      <span class="text-amber-400 text-xs ml-2">── EMA 20</span>
+      <span class="text-sky-400 text-xs ml-2">── MACD</span>
+      <span class="text-orange-400 text-xs ml-2">── Signal</span>
+    </p>
+    <div class="flex items-center gap-3">
+      <span id="chartStatus" class="text-slate-400 text-xs"></span>
+      <button id="reloadChart"
+              class="bg-slate-700 hover:bg-slate-600 text-white px-3 py-1.5 rounded-lg text-xs font-medium transition-colors hidden">
+        Reload
+      </button>
+    </div>
+  </div>
+  <div id="chartContainer" class="w-full rounded-lg overflow-hidden"></div>
 </div>
+
 <!-- STG Executions table -->
 <div class="bg-slate-800 border border-slate-700 rounded-xl overflow-hidden">
-     <div class="px-4 py-3 border-b border-slate-700">
-            <p class="text-slate-300 font-semibold">Executions <span class="text-slate-500 text-xs ml-1">({{ executions|length }} fills)</span></p>
-              </div>
-                <table class="w-full text-sm">
-                       <thead>
-                                <tr class="border-b border-slate-700 text-slate-400 text-xs uppercase tracking-wide">
-                                           <th class="px-4 py-3 text-left">Time</th>
-                                                   <th class="px-4 py-3 text-left">Side</th>
-                                                           <th class="px-4 py-3 text-right">Qty</th>
-                                                                   <th class="px-4 py-3 text-right">Price</th>
-                                                                           <th class="px-4 py-3 text-right">Value</th>
-                                                                                   <th class="px-4 py-3 text-right">Commission</th>
-                                                                                         </tr>
-                                                                                             </thead>
-                                                                                                 <tbody class="divide-y divide-slate-700/50">
-                                                                                                          {% for ex in executions %}
-                                                                                                                <tr class="{% if ex.side == 'BUY' %}bg-emerald-900/10{% else %}bg-red-900/10{% endif %}">
-                                                                                                                           <td class="px-4 py-3 text-slate-300 font-mono">{{ ex.time.strftime("%H:%M:%S") }}</td>
-                                                                                                                                   <td class="px-4 py-3">
-                                                                                                                                                <span class="px-2 py-0.5 rounded text-xs font-bold
-                                                                                                                                                                                    {% if ex.side == 'BUY' %}bg-emerald-900/60 text-emerald-400{% 
+  <div class="px-4 py-3 border-b border-slate-700">
+    <p class="text-slate-300 font-semibold">Executions <span class="text-slate-500 text-xs ml-1">({{ exec_rows|length }} fills)</span></p>
+  </div>
+  <table class="w-full text-sm">
+    <thead>
+      <tr class="border-b border-slate-700 text-slate-400 text-xs uppercase tracking-wide">
+        <th class="px-4 py-3 text-left">Time</th>
+        <th class="px-4 py-3 text-left">Side</th>
+        <th class="px-4 py-3 text-right">Qty</th>
+        <th class="px-4 py-3 text-right">Price</th>
+        <th class="px-4 py-3 text-right">Avg Position</th>
+        <th class="px-4 py-3 text-right">Value</th>
+        <th class="px-4 py-3 text-right">Commission</th>
+        <th class="px-4 py-3 text-right">Gross P&amp;L</th>
+        <th class="px-4 py-3 text-right">Net P&amp;L</th>
+      </tr>
+    </thead>
+    <tbody class="divide-y divide-slate-700/50">
+      {% for row in exec_rows %}
+      {% set ex = row.ex %}
+      <tr class="{% if ex.side == 'BUY' %}bg-emerald-900/10{% else %}bg-red-900/10{% endif %}">
+        <td class="px-4 py-3 text-slate-300 font-mono">{{ ex.time.strftime("%H:%M:%S") }}</td>
+        <td class="px-4 py-3">
+          <span class="px-2 py-0.5 rounded text-xs font-bold {% if ex.side == 'BUY' %}bg-emerald-900/60 text-emerald-400{% else %}bg-red-900/60 text-red-400{% endif %}">
+            {{ ex.side }}
+          </span>
+        </td>
+        <td class="px-4 py-3 text-right text-slate-300">{{ "%.0f"|format(ex.quantity) }}</td>
+        <td class="px-4 py-3 text-right text-slate-300">${{ "%.4f"|format(ex.price) }}</td>
+        <td class="px-4 py-3 text-right">
+          {% if row.avg_pos is not none %}
+            <span class="text-slate-300">${{ "%.4f"|format(row.avg_pos) }}</span>
+          {% else %}
+            <span class="text-slate-600">—</span>
+          {% endif %}
+        </td>
+        <td class="px-4 py-3 text-right text-slate-300">${{ "%.2f"|format(ex.quantity * ex.price) }}</td>
+        <td class="px-4 py-3 text-right text-slate-500">${{ "%.4f"|format(ex.commission or 0) }}</td>
+        <td class="px-4 py-3 text-right">
+          {% if row.gross_pnl is not none %}
+            <span class="font-medium {% if row.gross_pnl > 0 %}text-emerald-400{% elif row.gross_pnl < 0 %}text-red-400{% else %}text-slate-400{% endif %}">
+              ${{ "%.2f"|format(row.gross_pnl) }}
+            </span>
+          {% else %}
+            <span class="text-slate-600">—</span>
+          {% endif %}
+        </td>
+        <td class="px-4 py-3 text-right">
+          {% if row.net_pnl is not none %}
+            <span class="font-bold {% if row.net_pnl > 0 %}text-emerald-400{% elif row.net_pnl < 0 %}text-red-400{% else %}text-slate-400{% endif %}">
+              ${{ "%.2f"|format(row.net_pnl) }}
+            </span>
+          {% else %}
+            <span class="text-slate-600">—</span>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+    <tfoot>
+      <tr class="border-t border-slate-600 text-slate-300 text-xs font-semibold">
+        <td colspan="2" class="px-4 py-3 text-slate-400">Totals</td>
+        <td class="px-4 py-3 text-right">
+          B:{{ "%.0f"|format(ods.bought_qty) }} / S:{{ "%.0f"|format(ods.sold_qty) }}
+        </td>
+        <td class="px-4 py-3"></td>
+        <td class="px-4 py-3"></td>
+        <td class="px-4 py-3 text-right">
+          ${{ "%.2f"|format(ods.avg_buy_price * ods.bought_qty + ods.avg_sell_price * ods.sold_qty) }}
+        </td>
+        <td class="px-4 py-3 text-right text-slate-500">${{ "%.4f"|format(ods.total_commission) }}</td>
+        <td class="px-4 py-3 text-right {% if ods.gross_pnl > 0 %}text-emerald-400{% elif ods.gross_pnl < 0 %}text-red-400{% else %}text-slate-400{% endif %}">
+          ${{ "%.2f"|format(ods.gross_pnl) }}
+        </td>
+        <td class="px-4 py-3 text-right font-bold {% if ods.net_pnl > 0 %}text-emerald-400{% elif ods.net_pnl < 0 %}text-red-400{% else %}text-slate-400{% endif %}">
+          ${{ "%.2f"|format(ods.net_pnl) }}
+        </td>
+      </tr>
+    </tfoot>
+  </table>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const CHART_URL = "/tradelog/trades/{{ trade_date.isoformat() }}/{{ symbol }}/chart";
+const statusEl  = document.getElementById("chartStatus");
+const reloadBtn = document.getElementById("reloadChart");
+
+// All timestamps from backend are UTC seconds.
+// Display as US/Eastern via toLocaleTimeString — no offset arithmetic needed.
+const tickMarkFormatter = t => new Date(t * 1000).toLocaleTimeString("en-US", {
+  timeZone: "America/New_York",
+  hour:     "2-digit",
+  minute:   "2-digit",
+  hour12:   false,
+});
+
+async function loadChart() {
+  statusEl.textContent = "Loading market data…";
+  reloadBtn.classList.add("hidden");
+  document.getElementById("chartContainer").innerHTML = "";
+
+  try {
+    const resp = await fetch(CHART_URL);
+    const data = await resp.json();
+
+    if (data.error)            { statusEl.textContent = data.error;        reloadBtn.classList.remove("hidden"); return; }
+    if (!data.candles?.length) { statusEl.textContent = "No candle data."; reloadBtn.classList.remove("hidden"); return; }
+
+    statusEl.textContent = `${data.candles.length} candles · ${data.markers.length} executions`;
+
+    const containerEl = document.getElementById("chartContainer");
+
+    // ── Single chart, two panes (v5 API) ──
+    const chart = LightweightCharts.createChart(containerEl, {
+      width:  containerEl.clientWidth,
+      height: 540,
+      layout: {
+        background: { color: "#0f172a" },
+        textColor:  "#f1f5f9",
+        panes: {
+          separatorColor:      "#334155",
+          separatorHoverColor: "#475569",
+          enableResize:        true,
+        },
+      },
+      grid: {
+        vertLines: { color: "#1e293b" },
+        horzLines: { color: "#1e293b" },
+      },
+      crosshair:       { mode: LightweightCharts.CrosshairMode.Normal },
+      rightPriceScale: { borderColor: "#334155" },
+      timeScale: {
+        borderColor:       "#334155",
+        timeVisible:       true,
+        secondsVisible:    false,
+        tickMarkFormatter,
+      },
+    });
+
+    // ── Pane 0: Volume ──
+    const volSeries = chart.addSeries(
+      LightweightCharts.HistogramSeries,
+      { priceFormat: { type: "volume" }, priceScaleId: "vol" },
+      0
+    );
+    chart.priceScale("vol").applyOptions({ scaleMargins: { top: 0.8, bottom: 0 } });
+    volSeries.setData(data.volume);
+
+    // ── Pane 0: Candlesticks ──
+    const candleSeries = chart.addSeries(
+      LightweightCharts.CandlestickSeries,
+      {
+        upColor: "#22c55e", downColor: "#ef4444",
+        borderUpColor: "#22c55e", borderDownColor: "#ef4444",
+        wickUpColor:   "#22c55e", wickDownColor:   "#ef4444",
+        priceScaleId: "right",
+      },
+      0
+    );
+    chart.priceScale("right").applyOptions({ scaleMargins: { top: 0.05, bottom: 0.25 } });
+    candleSeries.setData(data.candles);
+
+    // Markers — v5 API
+    LightweightCharts.createSeriesMarkers(candleSeries, data.markers);
+
+    // ── Pane 0: EMA 20 ──
+    const emaSeries = chart.addSeries(
+      LightweightCharts.LineSeries,
+      { color: "#f59e0b", lineWidth: 1.5, priceLineVisible: false, lastValueVisible: false, priceScaleId: "right" },
+      0
+    );
+    emaSeries.setData(data.ema20);
+
+    // ── Pane 1: MACD histogram ──
+    const histSeries = chart.addSeries(
+      LightweightCharts.HistogramSeries,
+      { priceLineVisible: false, lastValueVisible: false },
+      1
+    );
+    histSeries.setData(data.histogram);
+
+    // ── Pane 1: MACD line ──
+    const macdSeries = chart.addSeries(
+      LightweightCharts.LineSeries,
+      { color: "#38bdf8", lineWidth: 1.5, priceLineVisible: false, lastValueVisible: false },
+      1
+    );
+    macdSeries.setData(data.macd_line);
+
+    // ── Pane 1: Signal line ──
+    const signalSeries = chart.addSeries(
+      LightweightCharts.LineSeries,
+      { color: "#f97316", lineWidth: 1.5, priceLineVisible: false, lastValueVisible: false },
+      1
+    );
+    signalSeries.setData(data.signal_line);
+
+    // Set pane heights
+    const panes = chart.panes();
+    if (panes[0]) panes[0].setHeight(380);
+    if (panes[1]) panes[1].setHeight(130);
+
+    chart.timeScale().fitContent();
+
+    window.addEventListener("resize", () => {
+      chart.applyOptions({ width: containerEl.clientWidth });
+    });
+
+  } catch (e) {
+    statusEl.textContent = "Error: " + e.message;
+    reloadBtn.classList.remove("hidden");
+  }
+}
+
+reloadBtn.addEventListener("click", loadChart);
+loadChart();
+</script>
+{% endblock %}
