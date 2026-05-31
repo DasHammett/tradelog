@@ -64,83 +64,115 @@
   <div class="px-4 py-3 border-b border-slate-700">
     <p class="text-slate-300 font-semibold">Executions <span class="text-slate-500 text-xs ml-1">({{ exec_rows|length }} fills)</span></p>
   </div>
-  <table class="w-full text-sm">
-    <thead>
-      <tr class="border-b border-slate-700 text-slate-400 text-xs uppercase tracking-wide">
-        <th class="px-4 py-3 text-left">Time</th>
-        <th class="px-4 py-3 text-left">Side</th>
-        <th class="px-4 py-3 text-right">Qty</th>
-        <th class="px-4 py-3 text-right">Price</th>
-        <th class="px-4 py-3 text-right">Avg Position</th>
-        <th class="px-4 py-3 text-right">Value</th>
-        <th class="px-4 py-3 text-right">Commission</th>
-        <th class="px-4 py-3 text-right">Gross P&amp;L</th>
-        <th class="px-4 py-3 text-right">Net P&amp;L</th>
-      </tr>
-    </thead>
-    <tbody class="divide-y divide-slate-700/50">
-      {% for row in exec_rows %}
-      {% set ex = row.ex %}
-      <tr class="{% if ex.side == 'BUY' %}bg-emerald-900/10{% else %}bg-red-900/10{% endif %}">
-        <td class="px-4 py-3 text-slate-300 font-mono">{{ ex.time.strftime("%H:%M:%S") }}</td>
-        <td class="px-4 py-3">
-          <span class="px-2 py-0.5 rounded text-xs font-bold {% if ex.side == 'BUY' %}bg-emerald-900/60 text-emerald-400{% else %}bg-red-900/60 text-red-400{% endif %}">
-            {{ ex.side }}
-          </span>
-        </td>
-        <td class="px-4 py-3 text-right text-slate-300">{{ "%.0f"|format(ex.quantity) }}</td>
-        <td class="px-4 py-3 text-right text-slate-300">${{ "%.4f"|format(ex.price) }}</td>
-        <td class="px-4 py-3 text-right">
-          {% if row.avg_pos is not none %}
-            <span class="text-slate-300">${{ "%.4f"|format(row.avg_pos) }}</span>
-          {% else %}
-            <span class="text-slate-600">—</span>
-          {% endif %}
-        </td>
-        <td class="px-4 py-3 text-right text-slate-300">${{ "%.2f"|format(ex.quantity * ex.price) }}</td>
-        <td class="px-4 py-3 text-right text-slate-500">${{ "%.4f"|format(ex.commission or 0) }}</td>
-        <td class="px-4 py-3 text-right">
-          {% if row.gross_pnl is not none %}
-            <span class="font-medium {% if row.gross_pnl > 0 %}text-emerald-400{% elif row.gross_pnl < 0 %}text-red-400{% else %}text-slate-400{% endif %}">
-              ${{ "%.2f"|format(row.gross_pnl) }}
+  <div class="overflow-x-auto">
+    <table class="w-full text-sm whitespace-nowrap">
+      <thead>
+        <tr class="border-b border-slate-700 text-slate-400 text-xs uppercase tracking-wide">
+          <th class="px-4 py-3 text-left">Time</th>
+          <th class="px-4 py-3 text-left">Side</th>
+          <th class="px-4 py-3 text-right">Qty</th>
+          <th class="px-4 py-3 text-right">Price</th>
+          <th class="px-4 py-3 text-right">Avg Position</th>
+          <th class="px-4 py-3 text-right">Value</th>
+          <th class="px-4 py-3 text-right">Commission</th>
+          <th class="px-4 py-3 text-right">Broker</th>
+          <th class="px-4 py-3 text-right">3rd Party</th>
+          <th class="px-4 py-3 text-right">Clearing</th>
+          <th class="px-4 py-3 text-right">Regulatory</th>
+          <th class="px-4 py-3 text-right">Gross P&amp;L</th>
+          <th class="px-4 py-3 text-right">Net P&amp;L</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-slate-700/50">
+        {% for row in exec_rows %}
+        {% set ex = row.ex %}
+        <tr class="{% if ex.side == 'BUY' %}bg-emerald-900/10{% else %}bg-red-900/10{% endif %}">
+          <td class="px-4 py-3 text-slate-300 font-mono">{{ ex.time.strftime("%H:%M:%S") }}</td>
+          <td class="px-4 py-3">
+            <span class="px-2 py-0.5 rounded text-xs font-bold {% if ex.side == 'BUY' %}bg-emerald-900/60 text-emerald-400{% else %}bg-red-900/60 text-red-400{% endif %}">
+              {{ ex.side }}
             </span>
-          {% else %}
-            <span class="text-slate-600">—</span>
-          {% endif %}
-        </td>
-        <td class="px-4 py-3 text-right">
-          {% if row.net_pnl is not none %}
-            <span class="font-bold {% if row.net_pnl > 0 %}text-emerald-400{% elif row.net_pnl < 0 %}text-red-400{% else %}text-slate-400{% endif %}">
-              ${{ "%.2f"|format(row.net_pnl) }}
-            </span>
-          {% else %}
-            <span class="text-slate-600">—</span>
-          {% endif %}
-        </td>
-      </tr>
-      {% endfor %}
-    </tbody>
-    <tfoot>
-      <tr class="border-t border-slate-600 text-slate-300 text-xs font-semibold">
-        <td colspan="2" class="px-4 py-3 text-slate-400">Totals</td>
-        <td class="px-4 py-3 text-right">
-          B:{{ "%.0f"|format(ods.bought_qty) }} / S:{{ "%.0f"|format(ods.sold_qty) }}
-        </td>
-        <td class="px-4 py-3"></td>
-        <td class="px-4 py-3"></td>
-        <td class="px-4 py-3 text-right">
-          ${{ "%.2f"|format(ods.avg_buy_price * ods.bought_qty + ods.avg_sell_price * ods.sold_qty) }}
-        </td>
-        <td class="px-4 py-3 text-right text-slate-500">${{ "%.4f"|format(ods.total_commission) }}</td>
-        <td class="px-4 py-3 text-right {% if ods.gross_pnl > 0 %}text-emerald-400{% elif ods.gross_pnl < 0 %}text-red-400{% else %}text-slate-400{% endif %}">
-          ${{ "%.2f"|format(ods.gross_pnl) }}
-        </td>
-        <td class="px-4 py-3 text-right font-bold {% if ods.net_pnl > 0 %}text-emerald-400{% elif ods.net_pnl < 0 %}text-red-400{% else %}text-slate-400{% endif %}">
-          ${{ "%.2f"|format(ods.net_pnl) }}
-        </td>
-      </tr>
-    </tfoot>
-  </table>
+          </td>
+          <td class="px-4 py-3 text-right text-slate-300">{{ "%.0f"|format(ex.quantity) }}</td>
+          <td class="px-4 py-3 text-right text-slate-300">${{ "%.4f"|format(ex.price) }}</td>
+          <td class="px-4 py-3 text-right">
+            {% if row.avg_pos is not none %}
+              <span class="text-slate-300">${{ "%.4f"|format(row.avg_pos) }}</span>
+            {% else %}
+              <span class="text-slate-600">—</span>
+            {% endif %}
+          </td>
+          <td class="px-4 py-3 text-right text-slate-300">${{ "%.2f"|format(ex.quantity * ex.price) }}</td>
+          <td class="px-4 py-3 text-right {% if (ex.commission or 0) > 0 %}text-red-400{% else %}text-slate-500{% endif %}">
+            ${{ "%.4f"|format(ex.commission or 0) }}
+          </td>
+          {% set v = ex.broker_charge or 0 %}
+          <td class="px-4 py-3 text-right {% if v > 0 %}text-red-400{% else %}text-slate-500{% endif %}">
+            ${{ "%.4f"|format(v) }}
+          </td>
+          {% set v = ex.third_party_charge or 0 %}
+          <td class="px-4 py-3 text-right {% if v > 0 %}text-red-400{% else %}text-slate-500{% endif %}">
+            ${{ "%.4f"|format(v) }}
+          </td>
+          {% set v = ex.clearing_charge or 0 %}
+          <td class="px-4 py-3 text-right {% if v > 0 %}text-red-400{% else %}text-slate-500{% endif %}">
+            ${{ "%.4f"|format(v) }}
+          </td>
+          {% set v = ex.regulatory_charge or 0 %}
+          <td class="px-4 py-3 text-right {% if v > 0 %}text-red-400{% else %}text-slate-500{% endif %}">
+            ${{ "%.4f"|format(v) }}
+          </td>
+          <td class="px-4 py-3 text-right">
+            {% if row.gross_pnl is not none %}
+              <span class="font-medium {% if row.gross_pnl > 0 %}text-emerald-400{% elif row.gross_pnl < 0 %}text-red-400{% else %}text-slate-400{% endif %}">
+                ${{ "%.2f"|format(row.gross_pnl) }}
+              </span>
+            {% else %}
+              <span class="text-slate-600">—</span>
+            {% endif %}
+          </td>
+          <td class="px-4 py-3 text-right">
+            {% if row.net_pnl is not none %}
+              <span class="font-bold {% if row.net_pnl > 0 %}text-emerald-400{% elif row.net_pnl < 0 %}text-red-400{% else %}text-slate-400{% endif %}">
+                ${{ "%.2f"|format(row.net_pnl) }}
+              </span>
+            {% else %}
+              <span class="text-slate-600">—</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+      <tfoot>
+        <tr class="border-t border-slate-600 text-slate-300 text-xs font-semibold">
+          <td colspan="2" class="px-4 py-3 text-slate-400">Totals</td>
+          <td class="px-4 py-3 text-right">
+            B:{{ "%.0f"|format(ods.bought_qty) }} / S:{{ "%.0f"|format(ods.sold_qty) }}
+          </td>
+          <td class="px-4 py-3"></td>
+          <td class="px-4 py-3"></td>
+          <td class="px-4 py-3 text-right">
+            ${{ "%.2f"|format(ods.avg_buy_price * ods.bought_qty + ods.avg_sell_price * ods.sold_qty) }}
+          </td>
+          <td class="px-4 py-3 text-right text-red-400">${{ "%.4f"|format(ods.total_commission) }}</td>
+          {% set total_broker     = exec_rows | sum(attribute='ex.broker_charge')      | default(0, boolean=true) %}
+          {% set total_third      = exec_rows | sum(attribute='ex.third_party_charge') | default(0, boolean=true) %}
+          {% set total_clearing   = exec_rows | sum(attribute='ex.clearing_charge')    | default(0, boolean=true) %}
+          {% set total_regulatory = exec_rows | sum(attribute='ex.regulatory_charge')  | default(0, boolean=true) %}
+          <td class="px-4 py-3 text-right {% if total_broker > 0 %}text-red-400{% else %}text-slate-500{% endif %}">${{ "%.4f"|format(total_broker) }}</td>
+          <td class="px-4 py-3 text-right {% if total_third > 0 %}text-red-400{% else %}text-slate-500{% endif %}">${{ "%.4f"|format(total_third) }}</td>
+          <td class="px-4 py-3 text-right {% if total_clearing > 0 %}text-red-400{% else %}text-slate-500{% endif %}">${{ "%.4f"|format(total_clearing) }}</td>
+          <td class="px-4 py-3 text-right {% if total_regulatory > 0 %}text-red-400{% else %}text-slate-500{% endif %}">${{ "%.4f"|format(total_regulatory) }}</td>
+          <td class="px-4 py-3 text-right {% if ods.gross_pnl > 0 %}text-emerald-400{% elif ods.gross_pnl < 0 %}text-red-400{% else %}text-slate-400{% endif %}">
+            ${{ "%.2f"|format(ods.gross_pnl) }}
+          </td>
+          <td class="px-4 py-3 text-right font-bold {% if ods.net_pnl > 0 %}text-emerald-400{% elif ods.net_pnl < 0 %}text-red-400{% else %}text-slate-400{% endif %}">
+            ${{ "%.2f"|format(ods.net_pnl) }}
+          </td>
+        </tr>
+      </tfoot>
+    </table>
+  </div>
 </div>
 {% endblock %}
 
