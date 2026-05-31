@@ -1,254 +1,80 @@
-{% extends "base.html" %}
+se.html" %}
 {% block title %}{{ symbol }} {{ trade_date }} — Tradelog{% endblock %}
 {% block content %}
 <div class="flex items-center gap-3 mb-6">
-  <a href="/tradelog/trades" class="text-slate-400 hover:text-white text-sm">← Trades</a>
-  <h1 class="text-2xl font-bold text-white">{{ symbol }}</h1>
-  <span class="text-slate-400 text-sm">{{ trade_date.strftime("%A, %B %d %Y") }}</span>
+     <a href="/tradelog/trades" class="text-slate-400 hover:text-white text-sm">← Trades</a>
+       <h1 class="text-2xl font-bold text-white">{{ symbol }}</h1>
+         <span class="text-slate-400 text-sm">{{ trade_date.strftime("%A, %B %d %Y") }}</span>
 </div>
-<!-- ODS Summary cards -->
-<div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-  <div class="bg-slate-800 border border-slate-700 rounded-xl p-4">
-    <p class="text-slate-400 text-xs uppercase tracking-wide mb-1">Net P&amp;L</p>
-    <p class="text-2xl font-bold {% if ods.net_pnl > 0 %}text-emerald-400{% elif ods.net_pnl < 0 %}text-red-400{% else %}text-slate-300{% endif %}">
-      ${{ "%.2f"|format(ods.net_pnl) }}
-    </p>
-  </div>
-  <div class="bg-slate-800 border border-slate-700 rounded-xl p-4">
-    <p class="text-slate-400 text-xs uppercase tracking-wide mb-1">Avg Buy / Sell</p>
-    <p class="text-white font-semibold">${{ "%.4f"|format(ods.avg_buy_price) }}</p>
-    <p class="text-slate-400 text-sm">→ ${{ "%.4f"|format(ods.avg_sell_price) }}</p>
-  </div>
-  <div class="bg-slate-800 border border-slate-700 rounded-xl p-4">
-    <p class="text-slate-400 text-xs uppercase tracking-wide mb-1">Qty Bought / Sold</p>
-    <p class="text-white font-semibold">{{ "%.0f"|format(ods.bought_qty) }} / {{ "%.0f"|format(ods.sold_qty) }}</p>
-  </div>
-  <div class="bg-slate-800 border border-slate-700 rounded-xl p-4">
-    <p class="text-slate-400 text-xs uppercase tracking-wide mb-1">Commission</p>
-    <p class="text-white font-semibold">${{ "%.4f"|format(ods.total_commission) }}</p>
-    <p class="text-slate-500 text-xs">Gross: ${{ "%.2f"|format(ods.gross_pnl) }}</p>
-  </div>
+<!-- ODS Summary cards: 6 across -->
+<div class="grid grid-cols-2 lg:grid-cols-6 gap-4 mb-6">
+     <div class="bg-slate-800 border border-slate-700 rounded-xl p-4">
+            <p class="text-slate-400 text-xs uppercase tracking-wide mb-1">Net P&amp;L</p>
+                <p class="text-2xl font-bold {% if ods.net_pnl > 0 %}text-emerald-400{% elif ods.net_pnl < 0 %}text-red-400{% else %}text-slate-300{% endif %}">
+                      ${{ "%.2f"|format(ods.net_pnl) }}
+                          </p>
+                            </div>
+                              <div class="bg-slate-800 border border-slate-700 rounded-xl p-4">
+                                     <p class="text-slate-400 text-xs uppercase tracking-wide mb-1">Gross P&amp;L</p>
+                                         <p class="text-2xl font-bold {% if ods.gross_pnl > 0 %}text-emerald-400{% elif ods.gross_pnl < 0 %}text-red-400{% else %}text-slate-300{% endif %}">
+                                               ${{ "%.2f"|format(ods.gross_pnl) }}
+                                                   </p>
+                                                     </div>
+                                                       <div class="bg-slate-800 border border-slate-700 rounded-xl p-4">
+                                                              <p class="text-slate-400 text-xs uppercase tracking-wide mb-1">Avg Buy</p>
+                                                                  <p class="text-2xl font-bold text-white">${{ "%.4f"|format(ods.avg_buy_price) }}</p>
+                                                                    </div>
+                                                                      <div class="bg-slate-800 border border-slate-700 rounded-xl p-4">
+                                                                             <p class="text-slate-400 text-xs uppercase tracking-wide mb-1">Avg Sell</p>
+                                                                                 <p class="text-2xl font-bold text-white">${{ "%.4f"|format(ods.avg_sell_price) }}</p>
+                                                                                   </div>
+                                                                                     <div class="bg-slate-800 border border-slate-700 rounded-xl p-4">
+                                                                                            <p class="text-slate-400 text-xs uppercase tracking-wide mb-1">Quantity Traded</p>
+                                                                                                <p class="text-2xl font-bold text-white">{{ "%.0f"|format(ods.bought_qty) }}</p>
+                                                                                                  </div>
+                                                                                                    <div class="bg-slate-800 border border-slate-700 rounded-xl p-4">
+                                                                                                           <p class="text-slate-400 text-xs uppercase tracking-wide mb-1">Commission</p>
+                                                                                                               <p class="text-2xl font-bold text-white">${{ "%.4f"|format(ods.total_commission) }}</p>
+                                                                                                                 </div>
 </div>
-<!-- TradingView chart -->
+<!-- TradingView chart — single chart, two panes (LightweightCharts v5) -->
 <div class="bg-slate-800 border border-slate-700 rounded-xl p-4 mb-6">
-  <div class="flex items-center justify-between mb-3">
-    <p class="text-white font-semibold">1-Minute Chart — {{ symbol }}
-      <span class="text-amber-400 text-xs ml-2">── EMA 20</span>
-      <span class="text-sky-400 text-xs ml-2">── MACD</span>
-      <span class="text-orange-400 text-xs ml-2">── Signal</span>
-    </p>
-    <div class="flex items-center gap-3">
-      <span id="chartStatus" class="text-slate-400 text-xs"></span>
-      <button id="reloadChart"
-              class="bg-slate-700 hover:bg-slate-600 text-white px-3 py-1.5 rounded-lg text-xs font-medium transition-colors hidden">
-        Reload
-      </button>
-    </div>
-  </div>
-  <div id="paneCandlesVol" class="w-full rounded-lg overflow-hidden"></div>
-  <div class="text-slate-500 text-xs px-1 mt-2 mb-0.5">MACD (12, 26, 9)</div>
-  <div id="paneMACD" class="w-full rounded-lg overflow-hidden"></div>
+     <div class="flex items-center justify-between mb-3">
+            <p class="text-white font-semibold">1-Minute Chart — {{ symbol }}
+                  <span class="text-amber-400 text-xs ml-2">── EMA 20</span>
+                        <span class="text-sky-400 text-xs ml-2">── MACD</span>
+                              <span class="text-orange-400 text-xs ml-2">── Signal</span>
+                                  </p>
+                                      <div class="flex items-center gap-3">
+                                               <span id="chartStatus" class="text-slate-400 text-xs"></span>
+                                                     <button id="reloadChart"
+                                                                           class="bg-slate-700 hover:bg-slate-600 text-white px-3 py-1.5 rounded-lg text-xs font-medium transition-colors hidden">
+                                                                Reload
+                                                                      </button>
+                                                                          </div>
+                                                                            </div>
+                                                                              <div id="chartContainer" class="w-full rounded-lg overflow-hidden"></div>
 </div>
-<!-- Executions table -->
+<!-- STG Executions table -->
 <div class="bg-slate-800 border border-slate-700 rounded-xl overflow-hidden">
-  <div class="px-4 py-3 border-b border-slate-700">
-    <p class="text-slate-300 font-semibold">
-      Executions <span class="text-slate-500 text-xs ml-1">({{ exec_rows|length }} fills)</span>
-    </p>
-  </div>
-  <div class="overflow-x-auto">
-    <table class="w-full text-sm whitespace-nowrap">
-      <thead>
-        <tr class="border-b border-slate-700 text-slate-400 text-xs uppercase tracking-wide">
-          <th class="px-3 py-3 text-left">Time</th>
-          <th class="px-3 py-3 text-left">Side</th>
-          <th class="px-3 py-3 text-left">Order Type</th>
-          <th class="px-3 py-3 text-right">Qty</th>
-          <th class="px-3 py-3 text-right">Price</th>
-          <th class="px-3 py-3 text-right">Avg Position</th>
-          <th class="px-3 py-3 text-right">Value</th>
-          <th class="px-3 py-3 text-right">Commission</th>
-          <th class="px-3 py-3 text-right">Broker</th>
-          <th class="px-3 py-3 text-right">3rd Party</th>
-          <th class="px-3 py-3 text-right">Clearing</th>
-          <th class="px-3 py-3 text-right">Regulatory</th>
-          <th class="px-3 py-3 text-left">Exchange</th>
-          <th class="px-3 py-3 text-right">Gross P&amp;L</th>
-          <th class="px-3 py-3 text-right">Net P&amp;L</th>
-        </tr>
-      </thead>
-      <tbody class="divide-y divide-slate-700/50">
-        {% for row in exec_rows %}
-        {% set ex = row.ex %}
-        <tr class="{% if ex.side == 'BUY' %}bg-emerald-900/10{% else %}bg-red-900/10{% endif %}">
-          <td class="px-3 py-3 text-slate-300 font-mono text-xs">{{ ex.time.strftime("%H:%M:%S") }}</td>
-          <td class="px-3 py-3">
-            <span class="px-2 py-0.5 rounded text-xs font-bold
-                         {% if ex.side == 'BUY' %}bg-emerald-900/60 text-emerald-400{% else %}bg-red-900/60 text-red-400{% endif %}">
-              {{ ex.side }}
-            </span>
-          </td>
-          <td class="px-3 py-3 text-slate-400 text-xs">{{ ex.order_type or "—" }}</td>
-          <td class="px-3 py-3 text-right text-slate-300">{{ "%.0f"|format(ex.quantity) }}</td>
-          <td class="px-3 py-3 text-right text-slate-300">${{ "%.4f"|format(ex.price) }}</td>
-          <td class="px-3 py-3 text-right text-slate-300">
-            {% if row.avg_pos %}${{ "%.4f"|format(row.avg_pos) }}{% else %}—{% endif %}
-          </td>
-          <td class="px-3 py-3 text-right text-slate-300">${{ "%.2f"|format(ex.quantity * ex.price) }}</td>
-          {% set c = ex.commission or 0 %}<td class="px-3 py-3 text-right {% if c > 0 %}text-red-400{% elif c < 0 %}text-emerald-400{% else %}text-slate-500{% endif %}">${{ "%.4f"|format(c) }}</td>
-          {% set c = ex.broker_charge or 0 %}<td class="px-3 py-3 text-right {% if c > 0 %}text-red-400{% elif c < 0 %}text-emerald-400{% else %}text-slate-500{% endif %}">${{ "%.4f"|format(c) }}</td>
-          {% set c = ex.third_party_charge or 0 %}<td class="px-3 py-3 text-right {% if c > 0 %}text-red-400{% elif c < 0 %}text-emerald-400{% else %}text-slate-500{% endif %}">${{ "%.4f"|format(c) }}</td>
-          {% set c = ex.clearing_charge or 0 %}<td class="px-3 py-3 text-right {% if c > 0 %}text-red-400{% elif c < 0 %}text-emerald-400{% else %}text-slate-500{% endif %}">${{ "%.4f"|format(c) }}</td>
-          {% set c = ex.regulatory_charge or 0 %}<td class="px-3 py-3 text-right {% if c > 0 %}text-red-400{% elif c < 0 %}text-emerald-400{% else %}text-slate-500{% endif %}">${{ "%.4f"|format(c) }}</td>
-          <td class="px-3 py-3 text-slate-400 text-xs">{{ ex.exchange or "—" }}</td>
-          <td class="px-3 py-3 text-right text-xs
-                     {% if row.gross_pnl is not none %}
-                       {% if row.gross_pnl > 0 %}text-emerald-400{% elif row.gross_pnl < 0 %}text-red-400{% else %}text-slate-400{% endif %}
-                     {% else %}text-slate-600{% endif %}">
-            {% if row.gross_pnl is not none %}${{ "%.2f"|format(row.gross_pnl) }}{% else %}—{% endif %}
-          </td>
-          <td class="px-3 py-3 text-right font-medium text-xs
-                     {% if row.net_pnl is not none %}
-                       {% if row.net_pnl > 0 %}text-emerald-400{% elif row.net_pnl < 0 %}text-red-400{% else %}text-slate-400{% endif %}
-                     {% else %}text-slate-600{% endif %}">
-            {% if row.net_pnl is not none %}${{ "%.2f"|format(row.net_pnl) }}{% else %}—{% endif %}
-          </td>
-        </tr>
-        {% endfor %}
-      </tbody>
-      <tfoot>
-        <tr class="border-t border-slate-600 text-slate-300 text-xs font-semibold">
-          <td colspan="3" class="px-3 py-3 text-slate-400">Totals</td>
-          <td class="px-3 py-3 text-right">
-            B:{{ "%.0f"|format(ods.bought_qty) }} / S:{{ "%.0f"|format(ods.sold_qty) }}
-          </td>
-          <td class="px-3 py-3"></td>
-          <td class="px-3 py-3"></td>
-          <td class="px-3 py-3 text-right">
-            ${{ "%.2f"|format(ods.avg_buy_price * ods.bought_qty + ods.avg_sell_price * ods.sold_qty) }}
-          </td>
-          <td class="px-3 py-3 text-right text-slate-500">${{ "%.4f"|format(ods.total_commission) }}</td>
-          <td colspan="4" class="px-3 py-3"></td>
-          <td class="px-3 py-3"></td>
-          <td class="px-3 py-3 text-right
-                     {% if ods.gross_pnl > 0 %}text-emerald-400{% elif ods.gross_pnl < 0 %}text-red-400{% else %}text-slate-400{% endif %}">
-            ${{ "%.2f"|format(ods.gross_pnl) }}
-          </td>
-          <td class="px-3 py-3 text-right
-                     {% if ods.net_pnl > 0 %}text-emerald-400{% elif ods.net_pnl < 0 %}text-red-400{% else %}text-slate-400{% endif %}">
-            ${{ "%.2f"|format(ods.net_pnl) }}
-          </td>
-        </tr>
-      </tfoot>
-    </table>
-  </div>
-</div>
-{% endblock %}
-{% block scripts %}
-<script>
-const CHART_URL = "/tradelog/trades/{{ trade_date.isoformat() }}/{{ symbol }}/chart";
-const statusEl  = document.getElementById("chartStatus");
-const reloadBtn = document.getElementById("reloadChart");
-function isDST(d) {
-  const jan = new Date(d.getFullYear(), 0, 1).getTimezoneOffset();
-  const jul = new Date(d.getFullYear(), 6, 1).getTimezoneOffset();
-  return d.getTimezoneOffset() < Math.max(jan, jul);
-}
-const TRADE_DATE  = new Date("{{ trade_date.isoformat() }}");
-const ET_OFFSET   = isDST(TRADE_DATE) ? -4 * 3600 : -5 * 3600;
-const adjust      = arr => arr.map(d => ({ ...d, time: d.time + ET_OFFSET }));
-const sharedTimeScale = {
-  borderColor: "#334155", timeVisible: true, secondsVisible: false,
-  tickMarkFormatter: t => {
-    const d = new Date((t - ET_OFFSET) * 1000);
-    return d.getUTCHours().toString().padStart(2,"0") + ":" +
-           d.getUTCMinutes().toString().padStart(2,"0");
-  }
-};
-const sharedLayout = {
-  layout: { background: { color: "#0f172a" }, textColor: "#f1f5f9" },
-  grid:   { vertLines: { color: "#1e293b" }, horzLines: { color: "#1e293b" } },
-  crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
-  rightPriceScale: { borderColor: "#334155" },
-  timeScale: sharedTimeScale,
-};
-async function loadChart() {
-  statusEl.textContent = "Loading market data…";
-  reloadBtn.classList.add("hidden");
-  document.getElementById("paneCandlesVol").innerHTML = "";
-  document.getElementById("paneMACD").innerHTML = "";
-  try {
-    const resp = await fetch(CHART_URL);
-    const data = await resp.json();
-    if (data.error) { statusEl.textContent = data.error; reloadBtn.classList.remove("hidden"); return; }
-    if (!data.candles?.length) { statusEl.textContent = "No candle data."; reloadBtn.classList.remove("hidden"); return; }
-    statusEl.textContent = `${data.candles.length} candles · ${data.markers.length} executions`;
-    const candles    = adjust(data.candles);
-    const volume     = adjust(data.volume);
-    const ema20      = adjust(data.ema20);
-    const macdLine   = adjust(data.macd_line);
-    const signalLine = adjust(data.signal_line);
-    const histogram  = adjust(data.histogram);
-    const markers    = adjust(data.markers);
-    const paneCVEl = document.getElementById("paneCandlesVol");
-    const paneMAEl = document.getElementById("paneMACD");
-    const chart1 = LightweightCharts.createChart(paneCVEl, {
-      ...sharedLayout, width: paneCVEl.clientWidth, height: 380,
-    });
-    const volSeries = chart1.addHistogramSeries({ priceFormat: { type: "volume" }, priceScaleId: "vol" });
-    chart1.priceScale("vol").applyOptions({ scaleMargins: { top: 0.8, bottom: 0 } });
-    volSeries.setData(volume);
-    const candleSeries = chart1.addCandlestickSeries({
-      upColor: "#22c55e", downColor: "#ef4444",
-      borderUpColor: "#22c55e", borderDownColor: "#ef4444",
-      wickUpColor: "#22c55e", wickDownColor: "#ef4444",
-      priceScaleId: "right",
-    });
-    chart1.priceScale("right").applyOptions({ scaleMargins: { top: 0.05, bottom: 0.25 } });
-    candleSeries.setData(candles);
-    candleSeries.setMarkers(markers);
-    const emaSeries = chart1.addLineSeries({
-      color: "#f59e0b", lineWidth: 1.5,
-      priceLineVisible: false, lastValueVisible: false, priceScaleId: "right",
-    });
-    emaSeries.setData(ema20);
-    chart1.timeScale().fitContent();
-    const chart2 = LightweightCharts.createChart(paneMAEl, {
-      ...sharedLayout, width: paneMAEl.clientWidth, height: 130,
-    });
-    const histSeries = chart2.addHistogramSeries({ priceLineVisible: false, lastValueVisible: false });
-    histSeries.setData(histogram);
-    const macdSeries = chart2.addLineSeries({ color: "#38bdf8", lineWidth: 1.5, priceLineVisible: false, lastValueVisible: false });
-    macdSeries.setData(macdLine);
-    const signalSeries = chart2.addLineSeries({ color: "#f97316", lineWidth: 1.5, priceLineVisible: false, lastValueVisible: false });
-    signalSeries.setData(signalLine);
-    chart1.timeScale().subscribeVisibleTimeRangeChange(range => { if (range) chart2.timeScale().setVisibleRange(range); });
-    chart2.timeScale().subscribeVisibleTimeRangeChange(range => { if (range) chart1.timeScale().setVisibleRange(range); });
-    const range1 = chart1.timeScale().getVisibleRange();
-    if (range1) chart2.timeScale().setVisibleRange(range1);
-    let syncingCrosshair = false;
-    chart1.subscribeCrosshairMove(param => {
-      if (syncingCrosshair) return; syncingCrosshair = true;
-      if (param.time) chart2.setCrosshairPosition(NaN, param.time, histSeries);
-      else chart2.clearCrosshairPosition();
-      syncingCrosshair = false;
-    });
-    chart2.subscribeCrosshairMove(param => {
-      if (syncingCrosshair) return; syncingCrosshair = true;
-      if (param.time) chart1.setCrosshairPosition(NaN, param.time, candleSeries);
-      else chart1.clearCrosshairPosition();
-      syncingCrosshair = false;
-    });
-    window.addEventListener("resize", () => {
-      chart1.applyOptions({ width: paneCVEl.clientWidth });
-      chart2.applyOptions({ width: paneMAEl.clientWidth });
-    });
-  } catch (e) {
-    statusEl.textContent = "Error: " + e.message;
-    reloadBtn.classList.remove("hidden");
-  }
-}
-reloadBtn.addEventListener("click", loadChart);
-loadChart();
-</script>
-{% endblock %}
+     <div class="px-4 py-3 border-b border-slate-700">
+            <p class="text-slate-300 font-semibold">Executions <span class="text-slate-500 text-xs ml-1">({{ executions|length }} fills)</span></p>
+              </div>
+                <table class="w-full text-sm">
+                       <thead>
+                                <tr class="border-b border-slate-700 text-slate-400 text-xs uppercase tracking-wide">
+                                           <th class="px-4 py-3 text-left">Time</th>
+                                                   <th class="px-4 py-3 text-left">Side</th>
+                                                           <th class="px-4 py-3 text-right">Qty</th>
+                                                                   <th class="px-4 py-3 text-right">Price</th>
+                                                                           <th class="px-4 py-3 text-right">Value</th>
+                                                                                   <th class="px-4 py-3 text-right">Commission</th>
+                                                                                         </tr>
+                                                                                             </thead>
+                                                                                                 <tbody class="divide-y divide-slate-700/50">
+                                                                                                          {% for ex in executions %}
+                                                                                                                <tr class="{% if ex.side == 'BUY' %}bg-emerald-900/10{% else %}bg-red-900/10{% endif %}">
+                                                                                                                           <td class="px-4 py-3 text-slate-300 font-mono">{{ ex.time.strftime("%H:%M:%S") }}</td>
+                                                                                                                                   <td class="px-4 py-3">
+                                                                                                                                                <span class="px-2 py-0.5 rounded text-xs font-bold
+                                                                                                                                                                                    {% if ex.side == 'BUY' %}bg-emerald-900/60 text-emerald-400{% 
