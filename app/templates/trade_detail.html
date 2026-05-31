@@ -111,7 +111,7 @@
             ${{ "%.4f"|format(v) }}
           </td>
           {% set v = ex.third_party_charge or 0 %}
-          <td class="px-4 py-3 text-right {% if v > 0 %}text-red-400{% else %}text-slate-500{% endif %}">
+          <td class="px-4 py-3 text-right {% if v > 0 %}text-red-400{% else %}text-emerald-400{% endif %}">
             ${{ "%.4f"|format(v) }}
           </td>
           {% set v = ex.clearing_charge or 0 %}
