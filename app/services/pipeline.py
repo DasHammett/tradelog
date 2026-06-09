@@ -235,8 +235,8 @@ def _compute_rt_trades(affected: list, warnings: list):
         RtTrade.query.filter_by(date=trade_date, symbol=symbol).delete()
         execs = StgExecution.query\
             .filter_by(date=trade_date, symbol=symbol)\
-            .order_by(StgExecution.time.asc(), StgExecution.side.desc()).all()
-            # side.desc() sorts "BUY" before "SELL" alphabetically (B > S),
+            .order_by(StgExecution.time.asc(), StgExecution.side.asc()).all()
+            # side.asc() sorts "BUY" before "SELL" alphabetically (B < S),
             # ensuring a same-second stop-loss doesn't arrive before its BUY
         pos_qty        = 0.0
         pos_avg_cost   = 0.0
