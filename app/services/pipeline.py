@@ -235,7 +235,9 @@ def _compute_rt_trades(affected: list, warnings: list):
         RtTrade.query.filter_by(date=trade_date, symbol=symbol).delete()
         execs = StgExecution.query\
             .filter_by(date=trade_date, symbol=symbol)\
-            .order_by(StgExecution.time.asc()).all()
+            .order_by(StgExecution.time.asc(), StgExecution.side.desc()).all()
+            # side.desc() sorts "BUY" before "SELL" alphabetically (B > S),
+            # ensuring a same-second stop-loss doesn't arrive before its BUY
         pos_qty        = 0.0
         pos_avg_cost   = 0.0
         pos_commission = 0.0
@@ -297,7 +299,7 @@ def _compute_rt_trades(affected: list, warnings: list):
                 exit_time    = datetime.combine(trade_date, execs[-1].time),
                 quantity     = pos_qty,
                 entry_price  = round(pos_avg_cost, 6),
-                exit_price   = None,
+                exit_price   = 0.0,   # open position — no exit price yet; 0.0 satisfies NOT NULL
                 commission   = round(pos_commission, 6),
                 gross_pnl    = 0.0,
                 net_pnl      = 0.0,
