@@ -74,9 +74,20 @@ def _hold_time(rt_rows):
         "winners": round(sum(win_times)  / len(win_times),  1) if win_times  else 0,
         "losers":  round(sum(loss_times) / len(loss_times), 1) if loss_times else 0,
     }
-def get_dashboard_metrics(days: int = 30):
-    end   = date.today()
-    start = end - timedelta(days=days)
+def get_dashboard_metrics(period: str = "mtd"):
+    today = date.today()
+
+    if period == "wtd":
+        # Week starts Monday
+        start = today - timedelta(days=today.weekday())
+    elif period == "mtd":
+        start = today.replace(day=1)
+    elif period == "ytd":
+        start = today.replace(month=1, day=1)
+    else:  # "all"
+        start = date(2000, 1, 1)
+
+    end = today
     summaries = DailySummary.query.filter(
         DailySummary.date >= start,
         DailySummary.date <= end

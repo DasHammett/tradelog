@@ -11,11 +11,11 @@
 <div class="flex items-center justify-between mb-3">
   <h1 class="text-lg font-bold text-white">Dashboard</h1>
   <div class="flex gap-2">
-    {% for d in [7, 30, 90] %}
-    <a href="?days={{ d }}"
+    {% for p, label in [("wtd", "WTD"), ("mtd", "MTD"), ("ytd", "YTD"), ("all", "ALL")] %}
+    <a href="?period={{ p }}"
        class="px-3 py-1 rounded-lg text-sm font-medium transition-colors
-              {% if days == d %}bg-sky-600 text-white{% else %}bg-slate-700 text-slate-300 hover:bg-slate-600{% endif %}">
-      {{ d }}d
+              {% if period == p %}bg-sky-600 text-white{% else %}bg-slate-700 text-slate-300 hover:bg-slate-600{% endif %}">
+      {{ label }}
     </a>
     {% endfor %}
   </div>
