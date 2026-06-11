@@ -70,6 +70,7 @@
         <tr class="border-b border-slate-700 text-slate-400 text-xs uppercase tracking-wide">
           <th class="px-4 py-3 text-left">Time</th>
           <th class="px-4 py-3 text-left">Side</th>
+          <th class="px-4 py-3 text-left">Exchange</th>
           <th class="px-4 py-3 text-right">Qty</th>
           <th class="px-4 py-3 text-right">Price</th>
           <th class="px-4 py-3 text-right">Avg Position</th>
@@ -93,6 +94,7 @@
               {{ ex.side }}
             </span>
           </td>
+          <td class="px-4 py-3 text-slate-400 text-xs">{{ ex.exchange or "—" }}</td>
           <td class="px-4 py-3 text-right text-slate-300">{{ "%.0f"|format(ex.quantity) }}</td>
           <td class="px-4 py-3 text-right text-slate-300">${{ "%.4f"|format(ex.price) }}</td>
           <td class="px-4 py-3 text-right">
@@ -145,7 +147,7 @@
       </tbody>
       <tfoot>
         <tr class="border-t border-slate-600 text-slate-300 text-xs font-semibold">
-          <td colspan="2" class="px-4 py-3 text-slate-400">Totals</td>
+          <td colspan="3" class="px-4 py-3 text-slate-400">Totals</td>
           <td class="px-4 py-3 text-right">
             B:{{ "%.0f"|format(ods.bought_qty) }} / S:{{ "%.0f"|format(ods.sold_qty) }}
           </td>
