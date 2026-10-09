@@ -2,6 +2,28 @@
 {% block title %}Journal {{ entry_date }} — Tradelog{% endblock %}
 
 {% block content %}
+<style>
+  .md-body { color: #e2e8f0; font-size: 0.95rem; line-height: 1.65; overflow-wrap: anywhere; }
+  .md-body > * + * { margin-top: 0.85em; }
+  .md-body h1 { font-size: 1.6rem; font-weight: 700; color: #fff; }
+  .md-body h2 { font-size: 1.35rem; font-weight: 700; color: #fff; }
+  .md-body h3 { font-size: 1.15rem; font-weight: 600; color: #fff; }
+  .md-body h4, .md-body h5, .md-body h6 { font-weight: 600; color: #fff; }
+  .md-body ul { list-style: disc; padding-left: 1.5rem; }
+  .md-body ol { list-style: decimal; padding-left: 1.5rem; }
+  .md-body a { color: #60a5fa; text-decoration: underline; }
+  .md-body strong { color: #fff; font-weight: 700; }
+  .md-body em { font-style: italic; }
+  .md-body del { text-decoration: line-through; }
+  .md-body code { background: #0f172a; padding: 0.1em 0.35em; border-radius: 4px; font-size: 0.875em; }
+  .md-body pre { background: #0f172a; padding: 1rem; border-radius: 8px; overflow-x: auto; }
+  .md-body pre code { padding: 0; background: none; }
+  .md-body blockquote { border-left: 3px solid #475569; padding-left: 1rem; color: #94a3b8; }
+  .md-body hr { border-color: #334155; }
+  .md-body table { border-collapse: collapse; }
+  .md-body th, .md-body td { border: 1px solid #334155; padding: 0.4rem 0.75rem; }
+  .md-body th { background: #1e293b; color: #fff; }
+</style>
 <div class="flex items-center gap-3 mb-6">
   <a href="/tradelog/journal" class="text-slate-400 hover:text-white text-sm">← Journal</a>
   <h1 class="text-2xl font-bold text-white">{{ entry_date.strftime("%A, %B %d %Y") }}</h1>
@@ -30,7 +52,25 @@
 </div>
 {% endif %}
 
-<form method="POST" class="card">
+{% set editing = not (entry and entry.body) %}
+
+{% if entry and entry.body %}
+<div id="view-mode" class="card mb-6">
+  <div class="flex items-center justify-between mb-4">
+    <div class="flex items-center gap-2">
+      {% set mood_map = {"great": "😄 Great", "good": "🙂 Good", "neutral": "😐 Neutral", "bad": "😕 Bad", "terrible": "😞 Terrible"} %}
+      {% if entry.mood in mood_map %}<span class="text-sm text-slate-300">{{ mood_map[entry.mood] }}</span>{% endif %}
+    </div>
+    <button type="button" onclick="toggleEdit(true)"
+            class="bg-slate-700 hover:bg-slate-600 text-white px-4 py-1.5 rounded-lg text-sm font-medium transition-colors">
+      Edit
+    </button>
+  </div>
+  <div class="md-body">{{ entry.body|markdown }}</div>
+</div>
+{% endif %}
+
+<form method="POST" id="edit-mode" class="card{% if not editing %} hidden{% endif %}">
   <!-- Mood selector -->
   <div class="mb-5">
     <p class="text-slate-400 text-sm mb-2">How did trading feel today?</p>
@@ -68,11 +108,20 @@
           class="bg-brand hover:bg-brand-dark text-white px-6 py-2.5 rounded-lg font-medium transition-colors">
     Save Entry
   </button>
+  {% if not editing %}
+  <button type="button" onclick="toggleEdit(false)"
+          class="ml-2 text-slate-400 hover:text-white px-4 py-2.5 text-sm">Cancel</button>
+  {% endif %}
 </form>
 {% endblock %}
 
 {% block scripts %}
 <script>
+function toggleEdit(on) {
+  document.getElementById("edit-mode").classList.toggle("hidden", !on);
+  const v = document.getElementById("view-mode");
+  if (v) v.classList.toggle("hidden", on);
+}
 function selectMood(mood, el) {
   document.querySelectorAll("input[name=mood]").forEach(i => {
     const span = i.parentElement.querySelector("span.text-2xl");

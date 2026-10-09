@@ -7,5 +7,7 @@ requests==2.32.3
 yfinance==0.2.40
 python-dotenv==1.0.1
 Werkzeug==3.0.3
-pandas==2.2.2
+pandas==2.2.3
 pytz==2024.1
+Markdown==3.7
+nh3==0.3.7

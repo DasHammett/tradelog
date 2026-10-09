@@ -25,7 +25,10 @@ import pytz
 
 EASTERN      = pytz.timezone("US/Eastern")
 UTC          = pytz.utc
+POLYGON_BASE = "https://api.massive.com/v2/aggs/ticker"
+"""
 POLYGON_BASE = "https://api.polygon.io/v2/aggs/ticker"
+"""
 
 
 def _to_utc(trade_date, t):

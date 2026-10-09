@@ -20,7 +20,7 @@
       <div>
         <p class="text-white font-semibold">{{ e.date.strftime("%A, %B %d %Y") }}</p>
         <p class="text-slate-400 text-sm truncate max-w-lg">
-          {{ (e.body or "No content")[:120] }}{% if e.body and e.body|length > 120 %}…{% endif %}
+          {{ e.body|md_preview }}
         </p>
       </div>
     </div>

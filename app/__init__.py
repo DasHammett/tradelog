@@ -10,6 +10,10 @@ def create_app(config_object="config.Config"):
     app = Flask(__name__)
     app.config.from_object(config_object)
 
+    from app.markdown_utils import render_markdown, markdown_preview
+    app.jinja_env.filters["markdown"] = render_markdown
+    app.jinja_env.filters["md_preview"] = markdown_preview
+
     db.init_app(app)
     migrate.init_app(app, db)
 
