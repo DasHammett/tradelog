@@ -1,7 +1,7 @@
 from flask import Blueprint, render_template, request
 from app.services.pipeline import import_flex_xml, _recompute_ods, _recompute_daily_summary, _compute_rt_trades
 from app.services.flex_query import sync_flex
-from app.models import StgExecution, OdsDailySymbol, RtTrade, DailySummary, JournalEntry
+from app.models import StgExecution, OdsDailySymbol, RtTrade, DailySummary, JournalEntry, TradeTag
 from app import db
 imports_bp = Blueprint("imports", __name__)
 ALLOWED_EXTENSIONS = {".xml"}
@@ -63,6 +63,7 @@ def import_page():
                           "errors": [], "warnings": [], "skipped": [], "new_rows": 0}
             else:
                 try:
+                    TradeTag.query.delete()     # tags go with the executions; the strategy list is kept
                     RtTrade.query.delete()
                     OdsDailySymbol.query.delete()
                     DailySummary.query.delete()

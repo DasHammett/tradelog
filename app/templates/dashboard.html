@@ -130,7 +130,18 @@
   </div>
 
   <!-- ── ROW 3: Performance tables (flex-grow) ── -->
-  <div class="grid grid-cols-3 gap-3 flex-1 min-h-0">
+  <div class="grid grid-cols-4 gap-3 flex-1 min-h-0">
+    <div class="bg-slate-800 border border-slate-700 rounded-xl p-4 flex flex-col min-h-0">
+      <p class="text-slate-300 text-xs uppercase tracking-wide shrink-0">Performance By Tag</p>
+      <p class="text-slate-500 text-[11px] mb-2 shrink-0">net P&amp;L · trades · win %</p>
+      <div id="byTagRows" class="space-y-2 flex-1 overflow-auto"></div>
+      <p id="byTagHint" class="text-slate-500 text-[11px] mt-1 shrink-0 hidden">Tag your sells on a trade's page to see performance per strategy.</p>
+      <div class="flex justify-between items-center mt-2 text-slate-500 text-xs shrink-0">
+        <button id="tagPrev" class="px-2 py-1 bg-slate-700 rounded hover:bg-slate-600">‹</button>
+        <span id="tagPageLabel"></span>
+        <button id="tagNext" class="px-2 py-1 bg-slate-700 rounded hover:bg-slate-600">›</button>
+      </div>
+    </div>
     <div class="bg-slate-800 border border-slate-700 rounded-xl p-4 flex flex-col min-h-0">
       <p class="text-slate-300 text-xs uppercase tracking-wide mb-2 shrink-0">Performance By Price</p>
       <div id="byPriceRows" class="space-y-1.5 flex-1 overflow-auto"></div>
@@ -180,6 +191,8 @@ const pnlByDay = {{ metrics.pnl_by_day      | tojson }};
 const byPrice  = {{ metrics.by_price        | tojson }};
 const byHour   = {{ metrics.by_hour         | tojson }};
 const byDow    = {{ metrics.by_dow          | tojson }};
+const byTag    = {{ metrics.by_tag          | tojson }};
+const hasTagged = {{ metrics.has_tagged     | tojson }};
 
 const axisStyle = {
   ticks: { color: "#f1f5f9", maxTicksLimit: 7, font: { size: 14 } },
@@ -336,6 +349,60 @@ function renderPerfRows(containerId, data, page, pageSize) {
   }).join("");
 }
 
+// ── Performance by tag: two-line rows (name + P&L / bar + trades · win %) so it fits a narrow panel ──
+function renderTagRows(containerId, data, page, pageSize) {
+  const el = document.getElementById(containerId);
+  if (!data.length) {
+    el.innerHTML = `<p class="text-slate-500 text-xs">No trades in this period.</p>`;
+    return;
+  }
+  const slice  = data.slice(page * pageSize, (page + 1) * pageSize);
+  const maxAbs = Math.max(...data.map(d => Math.abs(d.pnl)), 0.01);
+  el.textContent = "";
+  slice.forEach(row => {
+    const pos = row.pnl >= 0;
+    const w   = Math.round(Math.abs(row.pnl) / maxAbs * 100);
+    const wrap = document.createElement("div");
+    wrap.className = "text-xs";
+    wrap.title = `${row.label}: ${row.trades} trade${row.trades === 1 ? "" : "s"}, ` +
+                 `${row.win_rate}% win rate, avg ${row.avg_pnl < 0 ? "-" : ""}$${Math.abs(row.avg_pnl).toFixed(2)} per trade`;
+    wrap.innerHTML = `
+      <div class="flex justify-between gap-2">
+        <span class="${row.untagged ? "text-slate-500 italic" : "text-slate-300"} truncate"></span>
+        <span class="${pos ? "text-emerald-400" : "text-red-400"} shrink-0">${pos ? "" : "-"}$${Math.abs(row.pnl).toFixed(2)}</span>
+      </div>
+      <div class="flex items-center gap-2 mt-0.5">
+        <div class="flex-1 h-1.5 bg-slate-700 rounded-full overflow-hidden">
+          <div class="h-full ${pos ? "bg-emerald-500" : "bg-red-500"} rounded-full" style="width:${w}%"></div>
+        </div>
+        <span class="text-slate-500 shrink-0">${row.trades} · ${Math.round(row.win_rate)}%</span>
+      </div>`;
+    wrap.querySelector("span").textContent = row.label;     // names are user-entered: never as HTML
+    el.appendChild(wrap);
+  });
+}
+
+function setupTagPanel() {
+  const rowsEl = document.getElementById("byTagRows");
+  const lbl    = document.getElementById("tagPageLabel");
+  const ROW_PX = 42;                                   // one two-line row (34px) + 8px gap
+  let page = 0;
+  // Rows per page follows the panel height, so the arrows page cleanly in short windows too
+  // (n rows need n*42 - 8px: there is no gap after the last row)
+  const pageSize = () => Math.max(1, Math.floor((rowsEl.clientHeight + 8) / ROW_PX));
+  const pages    = () => Math.ceil(byTag.length / pageSize()) || 1;
+  const render = () => {
+    page = Math.min(page, pages() - 1);
+    renderTagRows("byTagRows", byTag, page, pageSize());
+    lbl.textContent = `${page + 1}/${pages()}`;
+  };
+  document.getElementById("tagPrev").addEventListener("click", () => { if (page > 0) { page--; render(); } });
+  document.getElementById("tagNext").addEventListener("click", () => { if (page < pages() - 1) { page++; render(); } });
+  document.getElementById("byTagHint").classList.toggle("hidden", hasTagged || !byTag.length);
+  new ResizeObserver(render).observe(rowsEl);
+  render();
+}
+
 function setupPaged(prevId, nextId, labelId, containerId, data, pageSize) {
   let page = 0;
   const total = Math.ceil(data.length / pageSize) || 1;
@@ -346,6 +413,7 @@ function setupPaged(prevId, nextId, labelId, containerId, data, pageSize) {
   render();
 }
 
+setupTagPanel();
 setupPaged("pricePrev", "priceNext", "pricePageLabel", "byPriceRows", byPrice, 6);
 setupPaged("hourPrev",  "hourNext",  "hourPageLabel",  "byHourRows",  byHour,  6);
 renderPerfRows("byDowRows", byDow, 0, 7);

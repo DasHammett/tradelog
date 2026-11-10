@@ -1,14 +1,14 @@
 """
 Dashboard metrics
 =================
-Trade-level metrics (win rate, avg winner/loser, hold time, by-price, by-hour, by-dow)
+Trade-level metrics (win rate, avg winner/loser, hold time, by-price, by-hour, by-dow, by-tag)
   → sourced from rt_trades (FIFO matched round-trips)
 Day-level metrics (equity curve, drawdown, daily P&L)
   → sourced from daily_summary (pre-aggregated from rt_trades)
 Totals (net P&L, commissions)
   → sourced from daily_summary
 """
-from app.models import RtTrade, DailySummary, OdsDailySymbol, StgExecution
+from app.models import RtTrade, DailySummary, OdsDailySymbol, StgExecution, TradeTag, Strategy
 from app import db
 from datetime import date, timedelta, datetime
 from collections import defaultdict
@@ -60,6 +60,48 @@ def _dow_pnl(rt_rows):
              "pnl":   round(buckets[i]["pnl"], 2),
              "pct":   round(buckets[i]["count"] / total * 100, 1) if total else 0}
             for i in range(7)]
+UNTAGGED_LABEL = "Untagged"
+
+
+def _tag_perf(rt_rows):
+    """
+    Performance per strategy tag. A round trip is tagged through its SELL:
+    rt_trades.exec_id (first fill of the grouped SELL) joins trade_tags.exec_id.
+    Computed live on every load, so re-tagging past trades shows immediately.
+    Strategies with no trades in the period are omitted; hidden strategies keep
+    their history. "Untagged" always comes last so the rows add up to the totals.
+    """
+    ids = list({r.exec_id for r in rt_rows if r.exec_id})
+    tag_of = {}
+    for i in range(0, len(ids), 500):                       # chunk the IN() list
+        chunk = ids[i:i + 500]
+        for exec_id, name in db.session.query(TradeTag.exec_id, Strategy.name)\
+                .join(Strategy, Strategy.id == TradeTag.strategy_id)\
+                .filter(TradeTag.exec_id.in_(chunk)).all():
+            tag_of[exec_id] = name
+
+    buckets = {}
+    for r in rt_rows:
+        name = tag_of.get(r.exec_id, UNTAGGED_LABEL)
+        b = buckets.setdefault(name, {"pnl": 0.0, "trades": 0, "wins": 0})
+        b["pnl"]    += r.net_pnl or 0
+        b["trades"] += 1
+        if (r.net_pnl or 0) > 0:
+            b["wins"] += 1
+
+    total = len(rt_rows)
+    rows = [{
+        "label":    name,
+        "pnl":      round(b["pnl"], 2),
+        "trades":   b["trades"],
+        "win_rate": round(b["wins"] / b["trades"] * 100, 1),
+        "avg_pnl":  round(b["pnl"] / b["trades"], 2),
+        "pct":      round(b["trades"] / total * 100, 1) if total else 0,
+        "untagged": name == UNTAGGED_LABEL,
+    } for name, b in buckets.items()]
+    # best strategy first, Untagged last
+    rows.sort(key=lambda x: (x["untagged"], -x["pnl"], x["label"].lower()))
+    return rows
 def _hold_time(rt_rows):
     win_times  = []
     loss_times = []
@@ -143,6 +185,7 @@ def get_dashboard_metrics(period: str = "mtd"):
                         for s in summaries]
     win_rate_by_day = [{"date": s.date.isoformat(), "win_rate": s.win_rate}
                         for s in summaries]
+    by_tag = _tag_perf(rt_rows)
     return {
         # Totals
         "net_pnl":           round(total_net, 2),
@@ -172,4 +215,6 @@ def get_dashboard_metrics(period: str = "mtd"):
         "by_price":         _bucket_pnl(rt_rows),
         "by_hour":          _hour_pnl(rt_rows),
         "by_dow":           _dow_pnl(rt_rows),
+        "by_tag":           by_tag,
+        "has_tagged":       any(not r["untagged"] for r in by_tag),
     }

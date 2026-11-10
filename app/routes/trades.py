@@ -1,6 +1,9 @@
 from flask import Blueprint, render_template, request, jsonify
-from app.models import OdsDailySymbol, StgExecution
+from sqlalchemy import func
+from app import db
+from app.models import OdsDailySymbol, StgExecution, Strategy, TradeTag
 from app.services.market_data import get_candles
+from app.services.grouping import group_executions, annotate_cycles, POSITION_EPS
 from datetime import datetime
 from collections import defaultdict
 trades_bp = Blueprint("trades", __name__)
@@ -44,9 +47,10 @@ def trades():
         breakdown = dict(agg)
     return render_template("trades.html", rows=rows, breakdown=breakdown,
                            symbol=symbol, date_from=date_from, date_to=date_to)
-def _compute_exec_rows(executions):
+def _compute_exec_rows(groups):
     """
-    For each execution compute:
+    For each FillGroup (partial fills of one order merged — see
+    app/services/grouping.py) compute:
       - avg_pos:   running cost basis per share including buy commissions
                    = (total_buy_value + total_buy_commission) / total_buy_qty
                    Shown in Avg Position column. NULL once position fully closed.
@@ -55,13 +59,14 @@ def _compute_exec_rows(executions):
       - net_pnl:   gross_pnl - sell_commission - proportional_buy_commission
     All state variables are captured BEFORE updating position so SELL calculations
     use the correct pre-sell values.
+    Each row also carries the group's flat-to-flat `cycle` number.
     """
     pos_qty        = 0.0
     pos_avg_price  = 0.0   # weighted avg buy price (no commission) — for gross P&L
     pos_cost_total = 0.0   # total cost including commissions — for avg_pos display
     pos_commission = 0.0   # accumulated buy commissions — for net P&L allocation
     result         = []
-    for ex in executions:
+    for ex in groups:
         if ex.side == "BUY":
             total_price    = pos_avg_price * pos_qty + ex.price * ex.quantity
             pos_qty       += ex.quantity
@@ -71,7 +76,7 @@ def _compute_exec_rows(executions):
             gross = None
             net   = None
         elif ex.side == "SELL":
-            if pos_qty > 0.0001:
+            if pos_qty > POSITION_EPS:
                 sell_qty         = min(ex.quantity, pos_qty)
                 # Capture pre-sell values for P&L calculation
                 avg_price_before = pos_avg_price
@@ -81,7 +86,7 @@ def _compute_exec_rows(executions):
                 # Update position
                 pos_qty        -= sell_qty
                 pos_commission -= buy_comm_portion
-                if pos_qty <= 0.0001:
+                if pos_qty <= POSITION_EPS:
                     pos_qty        = 0.0
                     pos_avg_price  = 0.0
                     pos_cost_total = 0.0
@@ -94,17 +99,19 @@ def _compute_exec_rows(executions):
         else:
             gross = None
             net   = None
-        avg_after = round(pos_cost_total / pos_qty, 4) if pos_qty > 0.0001 else None
+        avg_after = round(pos_cost_total / pos_qty, 4) if pos_qty > POSITION_EPS else None
         result.append({
             "ex":        ex,
             "avg_pos":   avg_after,
             "gross_pnl": gross,
             "net_pnl":   net,
+            "cycle":     ex.cycle,
+            "strategy_id": None,   # filled in by trade_detail from trade_tags
         })
     return result
 @trades_bp.route("/tradelog/trades/<string:trade_date>/<string:symbol>")
 def trade_detail(trade_date, symbol):
-    """STG drill-down — all executions for a date+symbol."""
+    """STG drill-down — all executions for a date+symbol, partial fills grouped."""
     try:
         d = datetime.strptime(trade_date, "%Y-%m-%d").date()
     except ValueError:
@@ -112,12 +119,32 @@ def trade_detail(trade_date, symbol):
     ods = OdsDailySymbol.query.filter_by(date=d, symbol=symbol.upper()).first_or_404()
     executions = StgExecution.query.filter_by(date=d, symbol=symbol.upper())\
                                    .order_by(StgExecution.time.asc()).all()
-    exec_rows = _compute_exec_rows(executions)
-    return render_template("trade_detail.html", ods=ods, exec_rows=exec_rows,
-                           trade_date=d, symbol=symbol.upper())
+    groups = annotate_cycles(group_executions(executions))
+    exec_rows = _compute_exec_rows(groups)
+
+    # Strategy tag per SELL group: first tag found on any member execution
+    tag_by_exec = {
+        t.exec_id: t.strategy_id
+        for t in TradeTag.query.filter(
+            TradeTag.exec_id.in_([e.exec_id for e in executions])
+        ).all()
+    }
+    for row in exec_rows:
+        g = row["ex"]
+        if g.side == "SELL":
+            row["strategy_id"] = next(
+                (tag_by_exec[eid] for eid in g.exec_ids if eid in tag_by_exec), None
+            )
+    strategies = Strategy.query.order_by(Strategy.sort_order.asc(), Strategy.name.asc()).all()
+    return render_template(
+        "trade_detail.html", ods=ods, exec_rows=exec_rows,
+        execution_count=len(executions), strategies=strategies,
+        strategies_json=[_strategy_dict(st) for st in strategies],
+        trade_date=d, symbol=symbol.upper(),
+    )
 @trades_bp.route("/tradelog/trades/<string:trade_date>/<string:symbol>/chart")
 def trade_chart_data(trade_date, symbol):
-    """JSON endpoint — 1-min candles for TradingView with one marker per execution."""
+    """JSON endpoint — 1-min candles, indicators and one segment per (grouped) fill."""
     try:
         d = datetime.strptime(trade_date, "%Y-%m-%d").date()
     except ValueError:
@@ -130,5 +157,111 @@ def trade_chart_data(trade_date, symbol):
         symbol     = symbol.upper(),
         trade_date = d,
         executions = executions,
+        fills      = group_executions(executions),
     )
     return jsonify(data or {"error": "No market data available"})
+
+
+# ---------------------------------------------------------------------------
+# Strategy tags
+# ---------------------------------------------------------------------------
+
+def _strategy_dict(s):
+    return {"id": s.id, "name": s.name, "is_active": bool(s.is_active)}
+
+
+def _strategies_payload():
+    rows = Strategy.query.order_by(Strategy.sort_order.asc(), Strategy.name.asc()).all()
+    return [_strategy_dict(r) for r in rows]
+
+
+@trades_bp.route("/tradelog/trades/tag", methods=["POST"])
+def set_trade_tag():
+    """
+    Set (or clear) the strategy tag of one or more SELL executions.
+    Body: {"exec_ids": ["FLEX-1", ...], "strategy_id": 3 | null}
+    The page sends every member exec_id of a grouped SELL (and, for "apply to
+    cycle", of every SELL in the cycle).
+    """
+    data = request.get_json(silent=True) or {}
+    exec_ids = data.get("exec_ids")
+    if (not isinstance(exec_ids, list) or not exec_ids or len(exec_ids) > 500
+            or not all(isinstance(e, str) and e for e in exec_ids)):
+        return jsonify({"ok": False, "error": "exec_ids must be a non-empty list of strings"}), 400
+    exec_ids = list(dict.fromkeys(exec_ids))
+
+    rows = StgExecution.query.filter(StgExecution.exec_id.in_(exec_ids)).all()
+    if len(rows) != len(exec_ids):
+        return jsonify({"ok": False, "error": "Unknown execution id"}), 404
+    if any(r.side != "SELL" for r in rows):
+        return jsonify({"ok": False, "error": "Only SELL executions can be tagged"}), 400
+
+    strategy_id = data.get("strategy_id")
+    if strategy_id in (None, "", 0):
+        TradeTag.query.filter(TradeTag.exec_id.in_(exec_ids)).delete(synchronize_session=False)
+        db.session.commit()
+        return jsonify({"ok": True, "strategy_id": None, "count": len(exec_ids)})
+
+    try:
+        strategy = db.session.get(Strategy, int(strategy_id))
+    except (TypeError, ValueError):
+        strategy = None
+    if strategy is None:
+        return jsonify({"ok": False, "error": "Unknown strategy"}), 404
+
+    existing = {t.exec_id: t for t in TradeTag.query.filter(TradeTag.exec_id.in_(exec_ids)).all()}
+    for eid in exec_ids:
+        tag = existing.get(eid)
+        if tag:
+            tag.strategy_id = strategy.id
+        else:
+            db.session.add(TradeTag(exec_id=eid, strategy_id=strategy.id))
+    db.session.commit()
+    return jsonify({"ok": True, "strategy_id": strategy.id, "count": len(exec_ids)})
+
+
+@trades_bp.route("/tradelog/strategies", methods=["POST"])
+def create_strategy():
+    """Create a strategy (or return / re-activate an existing one with the same name)."""
+    data = request.get_json(silent=True) or {}
+    name = " ".join(str(data.get("name", "")).split())
+    if not name or len(name) > 60:
+        return jsonify({"ok": False, "error": "Name must be 1-60 characters"}), 400
+    existing = Strategy.query.filter(func.lower(Strategy.name) == name.lower()).first()
+    if existing:
+        if not existing.is_active:
+            existing.is_active = True
+            db.session.commit()
+        return jsonify({"ok": True, "existing": True,
+                        "strategy": _strategy_dict(existing),
+                        "strategies": _strategies_payload()})
+    next_order = (db.session.query(func.max(Strategy.sort_order)).scalar() or 0) + 1
+    strategy = Strategy(name=name, is_active=True, sort_order=next_order)
+    db.session.add(strategy)
+    db.session.commit()
+    return jsonify({"ok": True, "existing": False,
+                    "strategy": _strategy_dict(strategy),
+                    "strategies": _strategies_payload()}), 201
+
+
+@trades_bp.route("/tradelog/strategies/<int:strategy_id>", methods=["POST"])
+def update_strategy(strategy_id):
+    """Rename and/or hide / show a strategy. Hidden strategies keep their history."""
+    strategy = db.session.get(Strategy, strategy_id)
+    if strategy is None:
+        return jsonify({"ok": False, "error": "Unknown strategy"}), 404
+    data = request.get_json(silent=True) or {}
+    if "name" in data:
+        name = " ".join(str(data.get("name", "")).split())
+        if not name or len(name) > 60:
+            return jsonify({"ok": False, "error": "Name must be 1-60 characters"}), 400
+        clash = Strategy.query.filter(func.lower(Strategy.name) == name.lower(),
+                                      Strategy.id != strategy.id).first()
+        if clash:
+            return jsonify({"ok": False, "error": f"'{clash.name}' already exists"}), 409
+        strategy.name = name
+    if "is_active" in data:
+        strategy.is_active = bool(data["is_active"])
+    db.session.commit()
+    return jsonify({"ok": True, "strategy": _strategy_dict(strategy),
+                    "strategies": _strategies_payload()})

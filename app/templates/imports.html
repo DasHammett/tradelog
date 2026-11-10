@@ -98,8 +98,10 @@
 <div class="card mt-6">
   <h2 class="text-white font-semibold text-lg mb-1">Recompute ODS &amp; Dashboard</h2>
   <p class="text-slate-400 text-sm mb-4">
-    Recomputes all ODS aggregations, RT trades, and daily summaries from raw STG data.
-    Use this if dashboard numbers look wrong after an import.
+    Recomputes all ODS aggregations, RT trades, and daily summaries from raw STG data
+    (partial fills of one order are merged into a single trade).
+    Use this if dashboard numbers look wrong after an import, and once after upgrading
+    so existing trades are regrouped.
   </p>
   <form method="POST">
     <input type="hidden" name="action" value="recompute_ods" />
@@ -125,7 +127,8 @@
 <div class="card mt-6 border-red-900/50">
   <h2 class="text-red-400 font-semibold text-lg mb-1">Reset Database</h2>
   <p class="text-slate-400 text-sm mb-4">
-    Permanently deletes <strong class="text-white">all data</strong> — trades, journal entries, and all aggregations.
+    Permanently deletes <strong class="text-white">all data</strong> — trades, strategy tags, journal entries, and all aggregations.
+    (Your strategy list is kept.)
     This cannot be undone. Use before a clean historical reimport.
   </p>
   <form method="POST">

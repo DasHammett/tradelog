@@ -6,10 +6,36 @@ from datetime import date, datetime
 journal_bp = Blueprint("journal", __name__)
 
 
+PAGE_SIZE = 30
+
+
 @journal_bp.route("/tradelog/journal")
 def journal():
-    entries = JournalEntry.query.order_by(JournalEntry.date.desc()).limit(60).all()
-    return render_template("journal.html", entries=entries)
+    total = JournalEntry.query.count()
+    pages = max(1, -(-total // PAGE_SIZE))                  # ceil division
+    try:
+        page = int(request.args.get("page", 1))
+    except ValueError:
+        page = 1
+    page = min(max(page, 1), pages)
+    entries = (JournalEntry.query
+               .order_by(JournalEntry.date.desc())
+               .offset((page - 1) * PAGE_SIZE).limit(PAGE_SIZE).all())
+    return render_template("journal.html", entries=entries, page=page, pages=pages,
+                           total=total, today=date.today().isoformat())
+
+
+@journal_bp.route("/tradelog/journal/go")
+def go_to_date():
+    """Date picker target: open (or start) the entry for the chosen day. Future days are not allowed."""
+    raw = request.args.get("date", "")
+    try:
+        d = datetime.strptime(raw, "%Y-%m-%d").date()
+    except ValueError:
+        return redirect(url_for("journal.journal"))
+    if d > date.today():
+        return redirect(url_for("journal.journal"))
+    return redirect(url_for("journal.journal_entry", entry_date=d.isoformat()))
 
 
 @journal_bp.route("/tradelog/journal/<string:entry_date>", methods=["GET", "POST"])
@@ -18,6 +44,9 @@ def journal_entry(entry_date):
         d = datetime.strptime(entry_date, "%Y-%m-%d").date()
     except ValueError:
         return "Invalid date", 400
+    if d > date.today():
+        # Applies to GET and POST, so a typed URL cannot create a future entry either
+        return "Journal entries cannot be created for future dates.", 400
 
     entry = JournalEntry.query.filter_by(date=d).first()
     summary = DailySummary.query.filter_by(date=d).first()

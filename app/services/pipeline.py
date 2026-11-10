@@ -14,13 +14,15 @@ import pandas as pd
 from datetime import datetime, date
 from app import db
 from app.models import StgExecution, OdsDailySymbol, DailySummary, RtTrade
+from app.services.grouping import group_executions, clean_order_id
 # ---------------------------------------------------------------------------
 # Step 1 — Parse Flex XML into DataFrame
 # ---------------------------------------------------------------------------
 def _parse_flex_xml(content: str):
     """
     Parse a FlexQueryResponse XML string.
-    Joins <Trade> (orderType) with <UnbundledCommissionDetail> on tradeID.
+    Joins <Trade> (orderType, openCloseIndicator, ibOrderID) with
+    <UnbundledCommissionDetail> on tradeID.
     Returns (DataFrame, errors).
     """
     errors = []
@@ -28,13 +30,12 @@ def _parse_flex_xml(content: str):
         root = ET.fromstring(content)
     except ET.ParseError as e:
         return None, [f"XML parse error: {e}"]
-    # Build tradeID → orderType lookup from <Trade> tags
-    order_type_map = {}
+    # Build tradeID → <Trade> attributes lookup (orderType, openCloseIndicator, ibOrderID)
+    trade_attrs = {}
     for trade in root.iter("Trade"):
         tid = trade.attrib.get("tradeID", "").strip()
-        ot  = trade.attrib.get("orderType", "").strip()
         if tid:
-            order_type_map[tid] = ot
+            trade_attrs[tid] = trade.attrib
     rows = []
     for detail in root.iter("UnbundledCommissionDetail"):
         a = detail.attrib
@@ -42,6 +43,7 @@ def _parse_flex_xml(content: str):
         if not tid:
             errors.append("UnbundledCommissionDetail missing tradeID — skipped")
             continue
+        t = trade_attrs.get(tid, {})
         rows.append({
             "exec_id":            f"FLEX-{tid}",
             "symbol":             a.get("symbol",                   "").strip(),
@@ -56,15 +58,11 @@ def _parse_flex_xml(content: str):
             "third_party_charge": a.get("thirdPartyExecutionCharge","0"),
             "clearing_charge":    a.get("thirdPartyClearingCharge", "0"),
             "regulatory_charge":  a.get("thirdPartyRegulatoryCharge","0"),
-            "open_close":         "",   # filled below from Trade tag
-            "order_type":         order_type_map.get(tid, ""),
+            "open_close":         t.get("openCloseIndicator", "").strip(),
+            "order_type":         t.get("orderType",          "").strip(),
+            "ib_order_id":        clean_order_id(t.get("ibOrderID")) or "",
             "source":             "FLEX",
         })
-        # Back-fill open_close from Trade tag
-        for trade in root.iter("Trade"):
-            if trade.attrib.get("tradeID", "").strip() == tid:
-                rows[-1]["open_close"] = trade.attrib.get("openCloseIndicator", "").strip()
-                break
     if not rows:
         return None, errors + ["No UnbundledCommissionDetail rows found in XML"]
     df = pd.DataFrame(rows)
@@ -140,7 +138,7 @@ def _validate_and_clean(df: pd.DataFrame):
     df = df[[
         "exec_id", "symbol", "date", "time", "side",
         "quantity", "price", "commission", "currency", "source",
-        "order_type", "exchange", "open_close",
+        "order_type", "exchange", "open_close", "ib_order_id",
         "broker_charge", "third_party_charge", "clearing_charge", "regulatory_charge",
     ]].copy()
     return df, errors
@@ -161,6 +159,35 @@ def _filter_duplicates(df: pd.DataFrame):
     new_df       = df[~df["exec_id"].isin(existing_ids)].copy()
     return new_df, duplicates
 # ---------------------------------------------------------------------------
+# Step 3b — Backfill fields on executions that already exist
+# ---------------------------------------------------------------------------
+def _backfill_existing(df: pd.DataFrame):
+    """
+    Dedup skips executions already in STG, so a later Flex Query change (e.g.
+    adding IB Order ID, or adding the Trades section) would never reach them.
+    For rows that already exist, fill in ib_order_id / order_type / open_close
+    when the stored value is empty and the incoming value is not.
+    Returns the list of (date, symbol) pairs that changed (to be recomputed).
+    """
+    if df.empty:
+        return []
+    incoming = df.set_index("exec_id")
+    existing = StgExecution.query.filter(StgExecution.exec_id.in_(list(incoming.index))).all()
+    changed_pairs = set()
+    for ex in existing:
+        row = incoming.loc[ex.exec_id]
+        changed = False
+        for field in ("ib_order_id", "order_type", "open_close"):
+            new_val = row[field] or None
+            if new_val and not getattr(ex, field):
+                setattr(ex, field, new_val)
+                changed = True
+        # only a new order ID changes grouping and therefore rt_trades
+        if changed and row["ib_order_id"]:
+            changed_pairs.add((ex.date, ex.symbol))
+    db.session.commit()
+    return sorted(changed_pairs)
+# ---------------------------------------------------------------------------
 # Step 4 — Write STG
 # ---------------------------------------------------------------------------
 def _write_stg(df: pd.DataFrame):
@@ -179,6 +206,7 @@ def _write_stg(df: pd.DataFrame):
             order_type         = row.order_type   or None,
             exchange           = row.exchange     or None,
             open_close         = row.open_close   or None,
+            ib_order_id        = row.ib_order_id  or None,
             broker_charge      = float(row.broker_charge),
             third_party_charge = float(row.third_party_charge),
             clearing_charge    = float(row.clearing_charge),
@@ -228,47 +256,51 @@ def _recompute_ods(affected: list):
 # ---------------------------------------------------------------------------
 def _compute_rt_trades(affected: list, warnings: list):
     """
-    For each (date, symbol) pair, pull STG rows sorted by time and apply
-    avg-cost FIFO matching.
+    For each (date, symbol) pair, pull STG rows, merge partial fills into
+    FillGroups (same IB order ID, else same side + same second), then apply
+    avg-cost FIFO matching on the groups. One grouped SELL = one rt_trades row,
+    so a 10 + 40 partial fill counts as ONE trade (one win or one loss).
     """
     for trade_date, symbol in affected:
         RtTrade.query.filter_by(date=trade_date, symbol=symbol).delete()
         execs = StgExecution.query\
             .filter_by(date=trade_date, symbol=symbol)\
             .order_by(StgExecution.time.asc(), StgExecution.side.asc()).all()
-            # side.asc() sorts "BUY" before "SELL" alphabetically (B < S),
-            # ensuring a same-second stop-loss doesn't arrive before its BUY
+        # group_executions orders groups by (first fill time, side) so "BUY"
+        # sorts before "SELL" and a same-second stop-loss never precedes its BUY.
+        groups = group_executions(execs)
         pos_qty        = 0.0
         pos_avg_cost   = 0.0
         pos_commission = 0.0
         pos_entry_time = None
-        for ex in execs:
-            exec_dt = datetime.combine(trade_date, ex.time)
-            if ex.side == "BUY":
-                total_cost     = pos_avg_cost * pos_qty + ex.price * ex.quantity
-                pos_qty       += ex.quantity
+        for g in groups:
+            exec_dt = datetime.combine(trade_date, g.time)
+            if g.side == "BUY":
+                total_cost     = pos_avg_cost * pos_qty + g.price * g.quantity
+                pos_qty       += g.quantity
                 pos_avg_cost   = total_cost / pos_qty
-                pos_commission += ex.commission
+                pos_commission += g.commission
                 if pos_entry_time is None:
                     pos_entry_time = exec_dt
-            elif ex.side == "SELL":
+            elif g.side == "SELL":
                 if pos_qty <= 0:
                     warnings.append(
-                        f"Orphaned SELL {ex.quantity} {symbol} @ {ex.price} "
-                        f"at {ex.time} — no open position, skipped"
+                        f"Orphaned SELL {g.quantity} {symbol} @ {g.price:.4f} "
+                        f"at {g.time} — no open position, skipped"
                     )
                     continue
-                sell_qty = min(ex.quantity, pos_qty)
+                sell_qty = min(g.quantity, pos_qty)
                 buy_commission_portion = pos_commission * (sell_qty / pos_qty)
                 # Cost basis per share: avg price + proportional buy commission per share
                 cost_basis_per_share = round(
                     pos_avg_cost + (pos_commission / pos_qty), 6
                 )
-                gross_pnl        = round((ex.price - pos_avg_cost) * sell_qty, 6)
-                total_commission = round(buy_commission_portion + ex.commission, 6)
+                gross_pnl        = round((g.price - pos_avg_cost) * sell_qty, 6)
+                total_commission = round(buy_commission_portion + g.commission, 6)
                 net_pnl          = round(gross_pnl - total_commission, 6)
-                # Write cost_basis back to the STG execution row
-                ex.cost_basis = cost_basis_per_share
+                # Write cost_basis back to every STG execution of the group
+                for m in g.members:
+                    m.cost_basis = cost_basis_per_share
                 rt = RtTrade(
                     date         = trade_date,
                     symbol       = symbol,
@@ -276,11 +308,12 @@ def _compute_rt_trades(affected: list, warnings: list):
                     exit_time    = exec_dt,
                     quantity     = sell_qty,
                     entry_price  = round(pos_avg_cost, 6),
-                    exit_price   = round(ex.price, 6),
+                    exit_price   = round(g.price, 6),
                     commission   = total_commission,
                     gross_pnl    = round(gross_pnl, 2),
                     net_pnl      = round(net_pnl, 2),
                     is_open      = False,
+                    exec_id      = g.exec_id,
                 )
                 db.session.add(rt)
                 pos_qty        -= sell_qty
@@ -360,7 +393,18 @@ def import_flex_xml(content: str) -> dict:
         }
     # Step 3 — Dedup (skip, not abort)
     new_df, skipped = _filter_duplicates(clean_df)
-    if new_df.empty:
+    # Step 3b — Fill in order IDs etc. on executions that already exist
+    try:
+        existing_df   = clean_df[clean_df["exec_id"].isin(skipped)]
+        backfill_pairs = _backfill_existing(existing_df)
+    except Exception as e:
+        db.session.rollback()
+        return {
+            "ok": False,
+            "message": f"Database error while updating existing executions: {e}",
+            "errors": [str(e)], "warnings": [], "skipped": skipped, "new_rows": 0,
+        }
+    if new_df.empty and not backfill_pairs:
         return {
             "ok": True,
             "message": f"Nothing new to import — all {len(skipped)} row(s) already in database.",
@@ -368,20 +412,29 @@ def import_flex_xml(content: str) -> dict:
         }
     # Steps 4-7 — Write
     try:
-        affected_pairs = list(new_df[["date", "symbol"]].drop_duplicates().itertuples(index=False, name=None))
+        new_pairs      = list(new_df[["date", "symbol"]].drop_duplicates().itertuples(index=False, name=None)) if not new_df.empty else []
+        affected_pairs = sorted(set(new_pairs) | set(backfill_pairs))
         affected_dates = {d for d, _ in affected_pairs}
         rt_warnings    = []
-        _write_stg(new_df)
+        if not new_df.empty:
+            _write_stg(new_df)
         _recompute_ods(affected_pairs)
         _compute_rt_trades(affected_pairs, rt_warnings)
         _recompute_daily_summary(affected_dates)
+        message = None
+        if backfill_pairs:
+            message = (
+                f"Import successful — {len(new_df)} new execution(s) written"
+                + (f" · {len(skipped)} duplicate(s) skipped" if skipped else "")
+                + f" · order IDs added to existing executions on {len(backfill_pairs)} date+symbol combination(s), trades regrouped."
+            )
         return {
             "ok":       True,
             "new_rows": len(new_df),
             "skipped":  skipped,
             "warnings": all_errors + rt_warnings,
             "errors":   [],
-            "message":  None,
+            "message":  message,
         }
     except Exception as e:
         db.session.rollback()

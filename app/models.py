@@ -30,6 +30,7 @@ class StgExecution(db.Model):
     clearing_charge     = db.Column(db.Float,       nullable=True)       # thirdPartyClearingCharge
     regulatory_charge   = db.Column(db.Float,       nullable=True)       # thirdPartyRegulatoryCharge
     cost_basis          = db.Column(db.Float,       nullable=True)       # (buy_value + buy_commission) / buy_qty — set on SELL rows by _compute_rt_trades
+    ib_order_id         = db.Column(db.String(32),  nullable=True, index=True)  # ibOrderID from the Flex <Trade> tag — groups partial fills of one order
 
     # Removed from TLG version: action_raw, raw_line (not present in Flex XML)
     imported_at = db.Column(db.DateTime, default=datetime.utcnow)
@@ -58,6 +59,7 @@ class RtTrade(db.Model):
     gross_pnl    = db.Column(db.Float,    nullable=False)  # (exit - entry) * qty
     net_pnl      = db.Column(db.Float,    nullable=False)  # gross_pnl - commission
     is_open      = db.Column(db.Boolean,  default=False)   # True if BUY with no matching SELL yet
+    exec_id      = db.Column(db.String(64), nullable=True, index=True)  # exec_id of the first fill of the (grouped) SELL — joins to trade_tags
 
 
     @property
@@ -133,3 +135,36 @@ class JournalEntry(db.Model):
     mood       = db.Column(db.String(20), nullable=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+# ---------------------------------------------------------------------------
+# Strategy tags — user-editable list, plus one tag per SELL (keyed on exec_id)
+# ---------------------------------------------------------------------------
+
+class Strategy(db.Model):
+    __tablename__ = "strategies"
+
+    id         = db.Column(db.Integer, primary_key=True)
+    name       = db.Column(db.String(60), nullable=False, unique=True)
+    is_active  = db.Column(db.Boolean, nullable=False, default=True)   # hidden strategies keep their history
+    sort_order = db.Column(db.Integer, nullable=False, default=0)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    def __repr__(self):
+        return f"<Strategy {self.name}>"
+
+
+class TradeTag(db.Model):
+    """
+    One row per tagged SELL execution. Keyed on stg_executions.exec_id (stable
+    and deduplicated), NOT on rt_trades, because rt_trades rows are deleted and
+    rebuilt on every import. For a grouped SELL the tag is stored on every
+    member exec_id.
+    """
+    __tablename__ = "trade_tags"
+
+    id          = db.Column(db.Integer, primary_key=True)
+    exec_id     = db.Column(db.String(64), nullable=False, unique=True, index=True)
+    strategy_id = db.Column(db.Integer, db.ForeignKey("strategies.id"), nullable=False)
+    updated_at  = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    strategy = db.relationship("Strategy")

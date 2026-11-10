@@ -2,12 +2,24 @@
 {% block title %}Journal — Tradelog{% endblock %}
 
 {% block content %}
-<div class="flex items-center justify-between mb-6">
+<div class="flex flex-wrap items-center justify-between gap-3 mb-6">
   <h1 class="text-2xl font-bold text-white">Journal</h1>
-  <a href="/tradelog/journal/new"
-     class="bg-brand hover:bg-brand-dark text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors">
-    + Today's Entry
-  </a>
+  <div class="flex flex-wrap items-center gap-3">
+    <!-- Open (or start) the entry for any past day -->
+    <form method="get" action="/tradelog/journal/go" class="flex items-center gap-2">
+      <label for="entryDate" class="text-slate-400 text-sm">Entry for</label>
+      <input type="date" id="entryDate" name="date" max="{{ today }}" required
+             class="bg-slate-900 border border-slate-600 text-slate-200 text-sm rounded-lg px-3 py-2" />
+      <button type="submit"
+              class="bg-slate-700 hover:bg-slate-600 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors">
+        Open
+      </button>
+    </form>
+    <a href="/tradelog/journal/new"
+       class="bg-brand hover:bg-brand-dark text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors">
+      + Today's Entry
+    </a>
+  </div>
 </div>
 
 <div class="grid gap-3">
@@ -35,4 +47,16 @@
   </div>
   {% endfor %}
 </div>
+
+{% if pages > 1 %}
+<div class="flex items-center justify-between mt-6 text-sm">
+  {% if page > 1 %}
+  <a href="?page={{ page - 1 }}" class="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 text-slate-200 rounded-lg">‹ Newer</a>
+  {% else %}<span></span>{% endif %}
+  <span class="text-slate-500">Page {{ page }} of {{ pages }} · {{ total }} entries</span>
+  {% if page < pages %}
+  <a href="?page={{ page + 1 }}" class="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 text-slate-200 rounded-lg">Older ›</a>
+  {% else %}<span></span>{% endif %}
+</div>
+{% endif %}
 {% endblock %}

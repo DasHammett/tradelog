@@ -44,7 +44,11 @@
 <div class="bg-slate-800 border border-slate-700 rounded-xl p-4 mb-6">
   <div class="flex items-center justify-between mb-3">
     <p class="text-white font-semibold">1-Minute Chart — {{ symbol }}
+      <span class="text-xs ml-2" style="color:#86efac">── EMA 9</span>
       <span class="text-amber-400 text-xs ml-2">── EMA 20</span>
+      <span class="text-white text-xs ml-2">── VWAP</span>
+      <span class="text-xs ml-2" style="color:#22d3ee">── Buy</span>
+      <span class="text-xs ml-2" style="color:#e879f9">── Sell</span>
       <span class="text-sky-400 text-xs ml-2">── MACD</span>
       <span class="text-orange-400 text-xs ml-2">── Signal</span>
     </p>
@@ -61,8 +65,16 @@
 
 <!-- STG Executions table -->
 <div class="bg-slate-800 border border-slate-700 rounded-xl overflow-hidden">
-  <div class="px-4 py-3 border-b border-slate-700">
-    <p class="text-slate-300 font-semibold">Executions <span class="text-slate-500 text-xs ml-1">({{ exec_rows|length }} fills)</span></p>
+  <div class="px-4 py-3 border-b border-slate-700 flex items-center justify-between">
+    <p class="text-slate-300 font-semibold">Executions
+      <span class="text-slate-500 text-xs ml-1">
+        ({{ exec_rows|length }} fill{{ "" if exec_rows|length == 1 else "s" }}{% if execution_count != exec_rows|length %} · {{ execution_count }} executions{% endif %})
+      </span>
+    </p>
+    <button type="button" id="manageStrategiesBtn"
+            class="text-slate-400 hover:text-white text-xs border border-slate-600 hover:border-slate-500 rounded-lg px-3 py-1.5 transition-colors">
+      Manage strategies
+    </button>
   </div>
   <div class="overflow-x-auto">
     <table class="w-full text-sm whitespace-nowrap">
@@ -70,6 +82,7 @@
         <tr class="border-b border-slate-700 text-slate-400 text-xs uppercase tracking-wide">
           <th class="px-4 py-3 text-left">Time</th>
           <th class="px-4 py-3 text-left">Side</th>
+          <th class="px-4 py-3 text-left">Strategy</th>
           <th class="px-4 py-3 text-left">Exchange</th>
           <th class="px-4 py-3 text-right">Qty</th>
           <th class="px-4 py-3 text-right">Price</th>
@@ -87,12 +100,42 @@
       <tbody class="divide-y divide-slate-700/50">
         {% for row in exec_rows %}
         {% set ex = row.ex %}
-        <tr class="{% if ex.side == 'BUY' %}bg-emerald-900/10{% else %}bg-red-900/10{% endif %}">
-          <td class="px-4 py-3 text-slate-300 font-mono">{{ ex.time.strftime("%H:%M:%S") }}</td>
+        {% set gid = "g" ~ loop.index %}
+        <tr class="exec-row {% if ex.side == 'BUY' %}bg-emerald-900/10{% else %}bg-red-900/10{% endif %}"
+            data-side="{{ ex.side }}" data-cycle="{{ row.cycle }}"
+            data-exec-ids="{{ ex.exec_ids|join(',') }}">
+          <td class="px-4 py-3 text-slate-300 font-mono">
+            {% if ex.is_grouped %}
+            <button type="button" class="group-toggle text-slate-500 hover:text-white mr-1 w-4 inline-block text-left"
+                    data-group="{{ gid }}" aria-expanded="false"
+                    title="Show the {{ ex.fill_count }} individual fills">▸</button>
+            {% endif %}{{ ex.time.strftime("%H:%M:%S") }}
+          </td>
           <td class="px-4 py-3">
             <span class="px-2 py-0.5 rounded text-xs font-bold {% if ex.side == 'BUY' %}bg-emerald-900/60 text-emerald-400{% else %}bg-red-900/60 text-red-400{% endif %}">
               {{ ex.side }}
             </span>
+            {% if ex.is_grouped %}<span class="text-slate-500 text-xs ml-1" title="{{ ex.fill_count }} partial fills merged">×{{ ex.fill_count }}</span>{% endif %}
+          </td>
+          <td class="px-4 py-3">
+            {% if ex.side == 'SELL' %}
+            <div class="flex items-center gap-1">
+              <select class="strategy-select bg-slate-900 border border-slate-600 text-slate-200 text-xs rounded-md px-2 py-1 max-w-[11rem]"
+                      data-current="{{ row.strategy_id if row.strategy_id is not none else '' }}">
+                <option value="">— none —</option>
+                {% for st in strategies %}
+                {% if st.is_active or st.id == row.strategy_id %}
+                <option value="{{ st.id }}" {% if st.id == row.strategy_id %}selected{% endif %}>{{ st.name }}{% if not st.is_active %} (hidden){% endif %}</option>
+                {% endif %}
+                {% endfor %}
+                <option value="__new__">+ New strategy…</option>
+              </select>
+              <button type="button" class="apply-cycle hidden text-slate-400 hover:text-white text-xs border border-slate-600 hover:border-slate-500 rounded-md px-1.5 py-1"
+                      title="Apply this strategy to every sell in this position cycle">⇊ cycle</button>
+            </div>
+            {% else %}
+            <span class="text-slate-600">—</span>
+            {% endif %}
           </td>
           <td class="px-4 py-3 text-slate-400 text-xs">{{ ex.exchange or "—" }}</td>
           <td class="px-4 py-3 text-right text-slate-300">{{ "%.0f"|format(ex.quantity) }}</td>
@@ -143,11 +186,32 @@
             {% endif %}
           </td>
         </tr>
+        {% if ex.is_grouped %}
+        {% for m in ex.members %}
+        <tr class="fill-detail hidden bg-slate-900/40 text-xs text-slate-400" data-group="{{ gid }}">
+          <td class="px-4 py-2 pl-10 font-mono">{{ m.time.strftime("%H:%M:%S") }}</td>
+          <td class="px-4 py-2 text-slate-500">fill</td>
+          <td class="px-4 py-2"></td>
+          <td class="px-4 py-2">{{ m.exchange or "—" }}</td>
+          <td class="px-4 py-2 text-right">{{ "%.0f"|format(m.quantity) }}</td>
+          <td class="px-4 py-2 text-right">${{ "%.4f"|format(m.price) }}</td>
+          <td class="px-4 py-2"></td>
+          <td class="px-4 py-2 text-right">${{ "%.2f"|format(m.quantity * m.price) }}</td>
+          <td class="px-4 py-2 text-right">${{ "%.4f"|format(m.commission or 0) }}</td>
+          <td class="px-4 py-2 text-right">${{ "%.4f"|format(m.broker_charge or 0) }}</td>
+          <td class="px-4 py-2 text-right">${{ "%.4f"|format(m.third_party_charge or 0) }}</td>
+          <td class="px-4 py-2 text-right">${{ "%.4f"|format(m.clearing_charge or 0) }}</td>
+          <td class="px-4 py-2 text-right">${{ "%.4f"|format(m.regulatory_charge or 0) }}</td>
+          <td class="px-4 py-2"></td>
+          <td class="px-4 py-2"></td>
+        </tr>
+        {% endfor %}
+        {% endif %}
         {% endfor %}
       </tbody>
       <tfoot>
         <tr class="border-t border-slate-600 text-slate-300 text-xs font-semibold">
-          <td colspan="3" class="px-4 py-3 text-slate-400">Totals</td>
+          <td colspan="4" class="px-4 py-3 text-slate-400">Totals</td>
           <td class="px-4 py-3 text-right">
             B:{{ "%.0f"|format(ods.bought_qty) }} / S:{{ "%.0f"|format(ods.sold_qty) }}
           </td>
@@ -176,6 +240,24 @@
     </table>
   </div>
 </div>
+
+<!-- Manage strategies -->
+<dialog id="strategyDialog" class="bg-slate-800 text-slate-200 border border-slate-600 rounded-xl p-0 w-full max-w-md backdrop:bg-black/60">
+  <div class="px-5 py-4 border-b border-slate-700 flex items-center justify-between">
+    <p class="text-white font-semibold">Strategies</p>
+    <button type="button" id="strategyDialogClose" class="text-slate-400 hover:text-white text-sm">Close</button>
+  </div>
+  <div class="px-5 py-4">
+    <p class="text-slate-500 text-xs mb-3">Rename a strategy or hide it from the dropdowns. Hidden strategies keep their tagged trades and still show on the dashboard.</p>
+    <ul id="strategyList" class="space-y-2 mb-4 max-h-72 overflow-y-auto"></ul>
+    <form id="strategyAddForm" class="flex gap-2">
+      <input id="strategyAddInput" type="text" maxlength="60" placeholder="New strategy name"
+             class="flex-1 bg-slate-900 border border-slate-600 text-slate-200 text-sm rounded-md px-3 py-1.5" />
+      <button type="submit" class="bg-brand hover:opacity-90 text-white text-sm font-medium px-3 py-1.5 rounded-md">Add</button>
+    </form>
+    <p id="strategyMsg" class="text-xs text-red-400 mt-2 min-h-[1rem]"></p>
+  </div>
+</dialog>
 {% endblock %}
 
 {% block scripts %}
@@ -205,7 +287,7 @@ async function loadChart() {
     if (data.error)            { statusEl.textContent = data.error;        reloadBtn.classList.remove("hidden"); return; }
     if (!data.candles?.length) { statusEl.textContent = "No candle data."; reloadBtn.classList.remove("hidden"); return; }
 
-    statusEl.textContent = `${data.candles.length} candles · ${data.markers.length} executions`;
+    statusEl.textContent = `${data.candles.length} candles · ${data.fills.length} fills`;
 
     const containerEl = document.getElementById("chartContainer");
 
@@ -259,8 +341,41 @@ async function loadChart() {
     chart.priceScale("right").applyOptions({ scaleMargins: { top: 0.05, bottom: 0.25 } });
     candleSeries.setData(data.candles);
 
-    // Markers — v5 API
-    LightweightCharts.createSeriesMarkers(candleSeries, data.markers);
+    // ── Pane 0: Fills — one short horizontal segment per fill, at the actual fill price ──
+    // Cyan = buy, magenta = sell: both stay clearly visible over green/red candles on the
+    // dark background and are distinct from the EMA (green/amber) and VWAP (white) lines.
+    const FILL_COLORS = { BUY: "#22d3ee", SELL: "#e879f9" };
+    (data.fills || []).forEach(f => {
+      const seg = chart.addSeries(
+        LightweightCharts.LineSeries,
+        {
+          color: FILL_COLORS[f.side] || "#ffffff",
+          lineWidth: 3,
+          priceLineVisible: false,
+          lastValueVisible: false,
+          crosshairMarkerVisible: false,
+          priceScaleId: "right",
+        },
+        0
+      );
+      seg.setData([{ time: f.start, value: f.price }, { time: f.end, value: f.price }]);
+    });
+
+    // ── Pane 0: VWAP (session, anchored 04:00 ET) ──
+    const vwapSeries = chart.addSeries(
+      LightweightCharts.LineSeries,
+      { color: "#ffffff", lineWidth: 2, priceLineVisible: false, lastValueVisible: false, priceScaleId: "right" },
+      0
+    );
+    vwapSeries.setData(data.vwap);
+
+    // ── Pane 0: EMA 9 ──
+    const ema9Series = chart.addSeries(
+      LightweightCharts.LineSeries,
+      { color: "#86efac", lineWidth: 1.5, priceLineVisible: false, lastValueVisible: false, priceScaleId: "right" },
+      0
+    );
+    ema9Series.setData(data.ema9);
 
     // ── Pane 0: EMA 20 ──
     const emaSeries = chart.addSeries(
@@ -299,7 +414,12 @@ async function loadChart() {
     if (panes[0]) panes[0].setHeight(380);
     if (panes[1]) panes[1].setHeight(130);
 
-    chart.timeScale().fitContent();
+    // Open zoomed on the trading activity; earlier (premarket) bars stay scrollable.
+    try {
+      chart.timeScale().setVisibleRange({ from: data.view_from, to: data.view_to });
+    } catch (e) {
+      chart.timeScale().fitContent();
+    }
 
     window.addEventListener("resize", () => {
       chart.applyOptions({ width: containerEl.clientWidth });
@@ -313,5 +433,209 @@ async function loadChart() {
 
 reloadBtn.addEventListener("click", loadChart);
 loadChart();
+
+// ───────────────────────── Executions table: groups + strategy tags ─────────────────────────
+let STRATEGIES = {{ strategies_json|tojson }};
+
+const TAG_URL        = "/tradelog/trades/tag";
+const STRATEGY_URL   = "/tradelog/strategies";
+
+async function postJSON(url, body) {
+  const resp = await fetch(url, {
+    method:  "POST",
+    headers: { "Content-Type": "application/json" },
+    body:    JSON.stringify(body),
+  });
+  let data = {};
+  try { data = await resp.json(); } catch (_) {}
+  if (!resp.ok || data.ok === false) throw new Error(data.error || `Request failed (${resp.status})`);
+  return data;
+}
+
+// Expand / collapse the raw partial fills behind a grouped row
+document.querySelectorAll(".group-toggle").forEach(btn => {
+  btn.addEventListener("click", () => {
+    const open = btn.getAttribute("aria-expanded") === "true";
+    btn.setAttribute("aria-expanded", String(!open));
+    btn.textContent = open ? "▸" : "▾";
+    document.querySelectorAll(`.fill-detail[data-group="${btn.dataset.group}"]`)
+      .forEach(tr => tr.classList.toggle("hidden", open));
+  });
+});
+
+// Rebuild a select's options from STRATEGIES (active ones + the currently selected one)
+function buildOptions(select) {
+  const current = select.dataset.current || "";
+  select.textContent = "";
+  const add = (value, label) => {
+    const o = document.createElement("option");
+    o.value = value; o.textContent = label;
+    select.appendChild(o);
+  };
+  add("", "— none —");
+  STRATEGIES.forEach(st => {
+    if (st.is_active || String(st.id) === current) {
+      add(String(st.id), st.name + (st.is_active ? "" : " (hidden)"));
+    }
+  });
+  add("__new__", "+ New strategy…");
+  select.value = current;
+}
+function refreshSelects() {
+  document.querySelectorAll(".strategy-select").forEach(buildOptions);
+}
+
+// "⇊ cycle" is only useful when the cycle has more than one SELL row
+function updateCycleButtons() {
+  const sellsPerCycle = {};
+  document.querySelectorAll('.exec-row[data-side="SELL"]').forEach(tr => {
+    const c = tr.dataset.cycle;
+    if (c && c !== "0") sellsPerCycle[c] = (sellsPerCycle[c] || 0) + 1;
+  });
+  document.querySelectorAll('.exec-row[data-side="SELL"]').forEach(tr => {
+    const btn = tr.querySelector(".apply-cycle");
+    if (btn) btn.classList.toggle("hidden", !((sellsPerCycle[tr.dataset.cycle] || 0) > 1));
+  });
+}
+
+function flashStatus(msg, isError) {
+  const el = document.getElementById("chartStatus");
+  el.textContent = msg;
+  el.classList.toggle("text-red-400", !!isError);
+  el.classList.toggle("text-slate-400", !isError);
+  setTimeout(() => { if (el.textContent === msg) el.textContent = ""; }, 3000);
+}
+
+async function saveTag(select, strategyId) {
+  const tr = select.closest("tr");
+  const ids = tr.dataset.execIds.split(",");
+  try {
+    await postJSON(TAG_URL, { exec_ids: ids, strategy_id: strategyId === "" ? null : Number(strategyId) });
+    select.dataset.current = strategyId;
+    flashStatus("Tag saved", false);
+  } catch (err) {
+    select.value = select.dataset.current || "";
+    flashStatus("Could not save tag: " + err.message, true);
+  }
+}
+
+document.querySelectorAll(".strategy-select").forEach(select => {
+  select.addEventListener("change", async () => {
+    if (select.value === "__new__") {
+      const name = (window.prompt("New strategy name:") || "").trim();
+      if (!name) { select.value = select.dataset.current || ""; return; }
+      try {
+        const data = await postJSON(STRATEGY_URL, { name });
+        STRATEGIES = data.strategies;
+        refreshSelects();
+        select.value = String(data.strategy.id);
+        await saveTag(select, String(data.strategy.id));
+      } catch (err) {
+        select.value = select.dataset.current || "";
+        flashStatus("Could not add strategy: " + err.message, true);
+      }
+      return;
+    }
+    await saveTag(select, select.value);
+  });
+});
+
+// Apply this row's strategy to every SELL in the same position cycle
+document.querySelectorAll(".apply-cycle").forEach(btn => {
+  btn.addEventListener("click", async () => {
+    const tr     = btn.closest("tr");
+    const select = tr.querySelector(".strategy-select");
+    const cycle  = tr.dataset.cycle;
+    const rows   = [...document.querySelectorAll('.exec-row[data-side="SELL"]')]
+                     .filter(r => r.dataset.cycle === cycle);
+    const ids    = rows.flatMap(r => r.dataset.execIds.split(","));
+    try {
+      await postJSON(TAG_URL, { exec_ids: ids, strategy_id: select.value === "" ? null : Number(select.value) });
+      rows.forEach(r => {
+        const sel = r.querySelector(".strategy-select");
+        sel.dataset.current = select.value;
+        sel.value = select.value;
+      });
+      flashStatus(`Applied to ${rows.length} sells in this cycle`, false);
+    } catch (err) {
+      flashStatus("Could not apply to cycle: " + err.message, true);
+    }
+  });
+});
+
+// ── Manage strategies dialog ──
+const dialog     = document.getElementById("strategyDialog");
+const listEl     = document.getElementById("strategyList");
+const msgEl      = document.getElementById("strategyMsg");
+
+function renderStrategyList() {
+  listEl.textContent = "";
+  STRATEGIES.forEach(st => {
+    const li = document.createElement("li");
+    li.className = "flex items-center gap-2";
+
+    const input = document.createElement("input");
+    input.type = "text"; input.maxLength = 60; input.value = st.name;
+    input.className = "flex-1 bg-slate-900 border border-slate-600 text-sm rounded-md px-2 py-1 " +
+                      (st.is_active ? "text-slate-200" : "text-slate-500");
+    const save = async () => {
+      const name = input.value.trim();
+      if (!name || name === st.name) { input.value = st.name; return; }
+      await changeStrategy(st.id, { name });
+    };
+    input.addEventListener("blur", save);
+    input.addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); input.blur(); } });
+
+    const toggle = document.createElement("button");
+    toggle.type = "button";
+    toggle.className = "text-xs border border-slate-600 hover:border-slate-500 rounded-md px-2 py-1 " +
+                       (st.is_active ? "text-slate-400 hover:text-white" : "text-emerald-400");
+    toggle.textContent = st.is_active ? "Hide" : "Show";
+    toggle.addEventListener("click", () => changeStrategy(st.id, { is_active: !st.is_active }));
+
+    li.append(input, toggle);
+    listEl.appendChild(li);
+  });
+}
+
+async function changeStrategy(id, body) {
+  msgEl.textContent = "";
+  try {
+    const data = await postJSON(`${STRATEGY_URL}/${id}`, body);
+    STRATEGIES = data.strategies;
+  } catch (err) {
+    msgEl.textContent = err.message;
+  }
+  renderStrategyList();
+  refreshSelects();
+}
+
+document.getElementById("manageStrategiesBtn").addEventListener("click", () => {
+  msgEl.textContent = "";
+  renderStrategyList();
+  dialog.showModal();
+});
+document.getElementById("strategyDialogClose").addEventListener("click", () => dialog.close());
+dialog.addEventListener("click", e => { if (e.target === dialog) dialog.close(); });
+
+document.getElementById("strategyAddForm").addEventListener("submit", async e => {
+  e.preventDefault();
+  const input = document.getElementById("strategyAddInput");
+  const name  = input.value.trim();
+  if (!name) return;
+  msgEl.textContent = "";
+  try {
+    const data = await postJSON(STRATEGY_URL, { name });
+    STRATEGIES = data.strategies;
+    input.value = "";
+  } catch (err) {
+    msgEl.textContent = err.message;
+  }
+  renderStrategyList();
+  refreshSelects();
+});
+
+updateCycleButtons();
+
 </script>
 {% endblock %}
