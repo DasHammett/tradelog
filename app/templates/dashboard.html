@@ -117,67 +117,49 @@
     </div>
   </div>
 
-  <!-- ── ROW 2: Charts (flex-grow to fill remaining space) ── -->
+  <!-- ── ROW 2: Cumulative P&L (line) + Daily P&L (bars) ── -->
   <div class="grid grid-cols-2 gap-3 flex-1 min-h-0">
     <div class="bg-slate-800 border border-slate-700 rounded-xl p-4 flex flex-col min-h-0">
-      <p class="text-slate-300 text-xs uppercase tracking-wide mb-2 shrink-0">Cumulative P&amp;L &amp; Drawdown</p>
-      <div class="flex-1 min-h-0"><canvas id="stackedPnlChart"></canvas></div>
+      <p class="text-slate-300 text-xs uppercase tracking-wide mb-2 shrink-0">Cumulative P&amp;L</p>
+      <div class="flex-1 min-h-0"><canvas id="cumChart"></canvas></div>
     </div>
     <div class="bg-slate-800 border border-slate-700 rounded-xl p-4 flex flex-col min-h-0">
-      <p class="text-slate-300 text-xs uppercase tracking-wide mb-2 shrink-0">P&amp;L Evolution</p>
-      <div class="flex-1 min-h-0"><canvas id="evolutionChart"></canvas></div>
+      <p class="text-slate-300 text-xs uppercase tracking-wide mb-2 shrink-0">Daily P&amp;L</p>
+      <div class="flex-1 min-h-0"><canvas id="dailyChart"></canvas></div>
     </div>
   </div>
 
-  <!-- ── ROW 3: Performance tables (flex-grow) ── -->
-  <div class="grid grid-cols-4 gap-3 flex-1 min-h-0">
-    <div class="bg-slate-800 border border-slate-700 rounded-xl p-4 flex flex-col min-h-0">
+  <!-- ── ROWS 3-4: tall Performance By Tag rail on the left (spans both rows) ── -->
+  <div class="grid grid-cols-4 grid-rows-2 gap-3 flex-[2] min-h-0">
+    <div class="bg-slate-800 border border-slate-700 rounded-xl p-4 flex flex-col min-h-0 row-span-2">
       <p class="text-slate-300 text-xs uppercase tracking-wide shrink-0">Performance By Tag</p>
-      <p class="text-slate-500 text-[11px] mb-2 shrink-0">net P&amp;L · trades · win %</p>
-      <div id="byTagRows" class="space-y-2 flex-1 overflow-auto"></div>
+      <p class="text-slate-500 text-[11px] mb-2 shrink-0">net P&amp;L · trades · win % · click to filter Sessions</p>
+      <div id="byTagRows" class="space-y-1 flex-1 overflow-auto"></div>
       <p id="byTagHint" class="text-slate-500 text-[11px] mt-1 shrink-0 hidden">Tag your sells on a trade's page to see performance per strategy.</p>
-      <div class="flex justify-between items-center mt-2 text-slate-500 text-xs shrink-0">
-        <button id="tagPrev" class="px-2 py-1 bg-slate-700 rounded hover:bg-slate-600">‹</button>
-        <span id="tagPageLabel"></span>
-        <button id="tagNext" class="px-2 py-1 bg-slate-700 rounded hover:bg-slate-600">›</button>
-      </div>
     </div>
     <div class="bg-slate-800 border border-slate-700 rounded-xl p-4 flex flex-col min-h-0">
       <p class="text-slate-300 text-xs uppercase tracking-wide mb-2 shrink-0">Performance By Price</p>
       <div id="byPriceRows" class="space-y-1.5 flex-1 overflow-auto"></div>
-      <div class="flex justify-between items-center mt-2 text-slate-500 text-xs shrink-0">
-        <button id="pricePrev" class="px-2 py-1 bg-slate-700 rounded hover:bg-slate-600">‹</button>
-        <span id="pricePageLabel"></span>
-        <button id="priceNext" class="px-2 py-1 bg-slate-700 rounded hover:bg-slate-600">›</button>
-      </div>
     </div>
     <div class="bg-slate-800 border border-slate-700 rounded-xl p-4 flex flex-col min-h-0">
       <p class="text-slate-300 text-xs uppercase tracking-wide mb-2 shrink-0">Performance By Hour</p>
       <div id="byHourRows" class="space-y-1.5 flex-1 overflow-auto"></div>
-      <div class="flex justify-between items-center mt-2 text-slate-500 text-xs shrink-0">
-        <button id="hourPrev" class="px-2 py-1 bg-slate-700 rounded hover:bg-slate-600">‹</button>
-        <span id="hourPageLabel"></span>
-        <button id="hourNext" class="px-2 py-1 bg-slate-700 rounded hover:bg-slate-600">›</button>
-      </div>
     </div>
     <div class="bg-slate-800 border border-slate-700 rounded-xl p-4 flex flex-col min-h-0">
       <p class="text-slate-300 text-xs uppercase tracking-wide mb-2 shrink-0">Performance By Day Of Week</p>
       <div id="byDowRows" class="space-y-1.5 flex-1 overflow-auto"></div>
     </div>
-  </div>
-
-  <!-- ── ROW 4: Win % + Avg Trade P&L (flex-grow) ── -->
-  <div class="grid grid-cols-2 gap-3 flex-1 min-h-0">
-    <div class="bg-slate-800 border border-slate-700 rounded-xl p-4 flex flex-col min-h-0">
-      <p class="text-slate-300 text-xs uppercase tracking-wide mb-2 shrink-0">Win % by Day</p>
-      <div class="flex-1 min-h-0"><canvas id="winRateChart"></canvas></div>
-    </div>
-    <div class="bg-slate-800 border border-slate-700 rounded-xl p-4 flex flex-col min-h-0">
-      <p class="text-slate-300 text-xs uppercase tracking-wide mb-2 shrink-0">Total P&amp;L by Day</p>
-      <div class="flex-1 min-h-0"><canvas id="avgPnlChart"></canvas></div>
+    <div class="col-span-3 grid grid-cols-2 gap-3 min-h-0">
+      <div class="bg-slate-800 border border-slate-700 rounded-xl p-4 flex flex-col min-h-0">
+        <p class="text-slate-300 text-xs uppercase tracking-wide mb-2 shrink-0">Win % by Day</p>
+        <div class="flex-1 min-h-0"><canvas id="winRateChart"></canvas></div>
+      </div>
+      <div class="bg-slate-800 border border-slate-700 rounded-xl p-4 flex flex-col min-h-0">
+        <p class="text-slate-300 text-xs uppercase tracking-wide mb-2 shrink-0">Avg P&amp;L per Trade by Day</p>
+        <div class="flex-1 min-h-0"><canvas id="avgTradeChart"></canvas></div>
+      </div>
     </div>
   </div>
-
 </div>
 {% endblock %}
 
@@ -186,13 +168,14 @@
 const equity   = {{ metrics.equity_curve    | tojson }};
 const avgPnl   = {{ metrics.avg_pnl_by_day  | tojson }};
 const winRateD = {{ metrics.win_rate_by_day | tojson }};
-const drawdown = {{ metrics.drawdown_curve  | tojson }};
 const pnlByDay = {{ metrics.pnl_by_day      | tojson }};
 const byPrice  = {{ metrics.by_price        | tojson }};
 const byHour   = {{ metrics.by_hour         | tojson }};
 const byDow    = {{ metrics.by_dow          | tojson }};
 const byTag    = {{ metrics.by_tag          | tojson }};
 const hasTagged = {{ metrics.has_tagged     | tojson }};
+const PERIOD_START = {{ metrics.period_start | tojson }};
+const PERIOD_END   = {{ metrics.period_end   | tojson }};
 
 const axisStyle = {
   ticks: { color: "#f1f5f9", maxTicksLimit: 7, font: { size: 14 } },
@@ -239,51 +222,13 @@ new Chart(document.getElementById("donutChart"), {
   }]
 });
 
-// ── Stacked bar: cumulative P&L + drawdown ──
-responsiveChart("stackedPnlChart", {
-  type: "bar",
-  data: {
-    labels: equity.map(d => d.date),
-    datasets: [
-      {
-        label: "Cum. P&L",
-        data:  equity.map(d => d.equity >= 0 ? d.equity : 0),
-        backgroundColor: "rgba(16,185,129,0.75)",
-        borderRadius: 2, stack: "stack",
-      },
-      {
-        label: "Neg. P&L",
-        data:  equity.map(d => d.equity < 0 ? d.equity : 0),
-        backgroundColor: "rgba(239,68,68,0.45)",
-        borderRadius: 2, stack: "stack",
-      },
-      {
-        label: "Drawdown",
-        data:  drawdown.map(d => d.drawdown),
-        backgroundColor: "rgba(239,68,68,0.75)",
-        borderRadius: 2, stack: "stack",
-      }
-    ]
-  },
-  options: {
-    responsive: true, maintainAspectRatio: false,
-    plugins: { legend: { display: true, labels: { color: "#94a3b8", font: { size: 10 }, boxWidth: 10 } } },
-    scales: { x: axisStyle, y: { ...axisStyle, stacked: true } }
-  }
-});
-
-// ── P&L Evolution line ──
-const evolutionData = (() => {
-  let running = 0;
-  return pnlByDay.map(d => { running += d.pnl; return { date: d.date, value: parseFloat(running.toFixed(2)) }; });
-})();
-
-responsiveChart("evolutionChart", {
+// ── Cumulative P&L: line, green above zero / red below ──
+responsiveChart("cumChart", {
   type: "line",
   data: {
-    labels: evolutionData.map(d => d.date),
+    labels: equity.map(d => d.date),
     datasets: [{
-      data: evolutionData.map(d => d.value),
+      data: equity.map(d => d.equity),
       segment: { borderColor: ctx => ctx.p1.parsed.y >= 0 ? "#10b981" : "#ef4444" },
       backgroundColor: "transparent",
       fill: false, tension: 0.3, pointRadius: 2, borderWidth: 2,
@@ -302,18 +247,22 @@ responsiveChart("evolutionChart", {
   }
 });
 
-// ── Total P&L per day ──
-responsiveChart("avgPnlChart", {
-  type: "bar",
-  data: {
-    labels: pnlByDay.map(d => d.date),
-    datasets: [{ data: pnlByDay.map(d => d.pnl),
-      backgroundColor: pnlByDay.map(d => d.pnl >= 0 ? "rgba(16,185,129,0.8)" : "rgba(239,68,68,0.8)"),
-      borderRadius: 3 }]
-  },
-  options: { responsive: true, maintainAspectRatio: false,
-    plugins: { legend: { display: false } }, scales: { x: axisStyle, y: axisStyle } }
-});
+// ── Bar chart helper: green for >= 0, red for < 0 ──
+function signedBars(id, rows, key) {
+  responsiveChart(id, {
+    type: "bar",
+    data: {
+      labels: rows.map(d => d.date),
+      datasets: [{ data: rows.map(d => d[key]),
+        backgroundColor: rows.map(d => d[key] >= 0 ? "rgba(16,185,129,0.8)" : "rgba(239,68,68,0.8)"),
+        borderRadius: 3 }]
+    },
+    options: { responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false } }, scales: { x: axisStyle, y: axisStyle } }
+  });
+}
+signedBars("dailyChart",    pnlByDay, "pnl");      // daily net P&L
+signedBars("avgTradeChart", avgPnl,   "avg_pnl");  // average P&L per trade, per day
 
 // ── Win Rate by day ──
 responsiveChart("winRateChart", {
@@ -328,12 +277,11 @@ responsiveChart("winRateChart", {
     scales: { x: axisStyle, y: { ...axisStyle, min: 0, max: 100 } } }
 });
 
-// ── Perf bar rows ──
-function renderPerfRows(containerId, data, page, pageSize) {
+// ── Perf bar rows (all rows shown, no paging; the panel scrolls if it ever overflows) ──
+function renderPerfRows(containerId, data) {
   const el     = document.getElementById(containerId);
-  const slice  = data.slice(page * pageSize, (page + 1) * pageSize);
   const maxAbs = Math.max(...data.map(d => Math.abs(d.pnl)), 0.01);
-  el.innerHTML = slice.map(row => {
+  el.innerHTML = data.map(row => {
     const pos = row.pnl >= 0;
     const w   = Math.round(Math.abs(row.pnl) / maxAbs * 100);
     return `<div class="flex items-center gap-2 text-xs">
@@ -349,24 +297,33 @@ function renderPerfRows(containerId, data, page, pageSize) {
   }).join("");
 }
 
-// ── Performance by tag: two-line rows (name + P&L / bar + trades · win %) so it fits a narrow panel ──
-function renderTagRows(containerId, data, page, pageSize) {
+// ── Performance by tag: tall rail, every row links to Sessions filtered by that tag ──
+function tagHref(row) {
+  const p = new URLSearchParams();
+  p.set("tag", row.untagged ? "none" : String(row.id));
+  if (PERIOD_START) p.set("from", PERIOD_START);   // ALL has no lower bound
+  p.set("to", PERIOD_END);
+  return "/tradelog/trades?" + p.toString();
+}
+
+function renderTagRows(containerId, data) {
   const el = document.getElementById(containerId);
   if (!data.length) {
     el.innerHTML = `<p class="text-slate-500 text-xs">No trades in this period.</p>`;
     return;
   }
-  const slice  = data.slice(page * pageSize, (page + 1) * pageSize);
   const maxAbs = Math.max(...data.map(d => Math.abs(d.pnl)), 0.01);
   el.textContent = "";
-  slice.forEach(row => {
+  data.forEach(row => {
     const pos = row.pnl >= 0;
     const w   = Math.round(Math.abs(row.pnl) / maxAbs * 100);
-    const wrap = document.createElement("div");
-    wrap.className = "text-xs";
-    wrap.title = `${row.label}: ${row.trades} trade${row.trades === 1 ? "" : "s"}, ` +
-                 `${row.win_rate}% win rate, avg ${row.avg_pnl < 0 ? "-" : ""}$${Math.abs(row.avg_pnl).toFixed(2)} per trade`;
-    wrap.innerHTML = `
+    const a   = document.createElement("a");
+    a.href      = tagHref(row);
+    a.className = "block text-xs rounded-lg px-2 py-1 -mx-2 hover:bg-slate-700/60 transition-colors";
+    a.title     = `${row.label}: ${row.trades} trade${row.trades === 1 ? "" : "s"}, ` +
+                  `${row.win_rate}% win rate, avg ${row.avg_pnl < 0 ? "-" : ""}$${Math.abs(row.avg_pnl).toFixed(2)} per trade. ` +
+                  `Click to see these sessions.`;
+    a.innerHTML = `
       <div class="flex justify-between gap-2">
         <span class="${row.untagged ? "text-slate-500 italic" : "text-slate-300"} truncate"></span>
         <span class="${pos ? "text-emerald-400" : "text-red-400"} shrink-0">${pos ? "" : "-"}$${Math.abs(row.pnl).toFixed(2)}</span>
@@ -377,45 +334,15 @@ function renderTagRows(containerId, data, page, pageSize) {
         </div>
         <span class="text-slate-500 shrink-0">${row.trades} · ${Math.round(row.win_rate)}%</span>
       </div>`;
-    wrap.querySelector("span").textContent = row.label;     // names are user-entered: never as HTML
-    el.appendChild(wrap);
+    a.querySelector("span").textContent = row.label;     // names are user-entered: never as HTML
+    el.appendChild(a);
   });
 }
 
-function setupTagPanel() {
-  const rowsEl = document.getElementById("byTagRows");
-  const lbl    = document.getElementById("tagPageLabel");
-  const ROW_PX = 42;                                   // one two-line row (34px) + 8px gap
-  let page = 0;
-  // Rows per page follows the panel height, so the arrows page cleanly in short windows too
-  // (n rows need n*42 - 8px: there is no gap after the last row)
-  const pageSize = () => Math.max(1, Math.floor((rowsEl.clientHeight + 8) / ROW_PX));
-  const pages    = () => Math.ceil(byTag.length / pageSize()) || 1;
-  const render = () => {
-    page = Math.min(page, pages() - 1);
-    renderTagRows("byTagRows", byTag, page, pageSize());
-    lbl.textContent = `${page + 1}/${pages()}`;
-  };
-  document.getElementById("tagPrev").addEventListener("click", () => { if (page > 0) { page--; render(); } });
-  document.getElementById("tagNext").addEventListener("click", () => { if (page < pages() - 1) { page++; render(); } });
-  document.getElementById("byTagHint").classList.toggle("hidden", hasTagged || !byTag.length);
-  new ResizeObserver(render).observe(rowsEl);
-  render();
-}
-
-function setupPaged(prevId, nextId, labelId, containerId, data, pageSize) {
-  let page = 0;
-  const total = Math.ceil(data.length / pageSize) || 1;
-  const lbl   = document.getElementById(labelId);
-  const render = () => { renderPerfRows(containerId, data, page, pageSize); lbl.textContent = `${page+1}/${total}`; };
-  document.getElementById(prevId).addEventListener("click", () => { if (page > 0) { page--; render(); } });
-  document.getElementById(nextId).addEventListener("click", () => { if (page < total-1) { page++; render(); } });
-  render();
-}
-
-setupTagPanel();
-setupPaged("pricePrev", "priceNext", "pricePageLabel", "byPriceRows", byPrice, 6);
-setupPaged("hourPrev",  "hourNext",  "hourPageLabel",  "byHourRows",  byHour,  6);
-renderPerfRows("byDowRows", byDow, 0, 7);
+renderTagRows("byTagRows", byTag);
+document.getElementById("byTagHint").classList.toggle("hidden", hasTagged || !byTag.length);
+renderPerfRows("byPriceRows", byPrice);
+renderPerfRows("byHourRows",  byHour);
+renderPerfRows("byDowRows",   byDow);
 </script>
 {% endblock %}

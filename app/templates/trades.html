@@ -21,6 +21,17 @@
     <input type="date" name="to" value="{{ date_to }}"
            class="bg-slate-800 border border-slate-600 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-sky-500" />
   </div>
+  <div>
+    <label class="block text-slate-400 text-xs mb-1">Tag</label>
+    <select name="tag" onchange="this.form.submit()"
+            class="bg-slate-800 border border-slate-600 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-sky-500">
+      <option value="">All tags</option>
+      {% for st in strategies %}
+      <option value="{{ st.id }}" {% if tag == st.id|string %}selected{% endif %}>{{ st.name }}{% if not st.is_active %} (hidden){% endif %}</option>
+      {% endfor %}
+      <option value="none" {% if tag == "none" %}selected{% endif %}>Untagged</option>
+    </select>
+  </div>
   <button type="submit"
           class="bg-sky-600 hover:bg-sky-500 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors">
     Filter
@@ -35,6 +46,10 @@
         <tr class="border-b border-slate-700 text-slate-400 text-xs uppercase tracking-wide">
           <th class="px-4 py-3 text-left">Symbol</th>
           <th class="px-4 py-3 text-left">Date</th>
+          {% if tag %}
+          <th class="px-4 py-3 text-right text-sky-400">Tag Trades</th>
+          <th class="px-4 py-3 text-right text-sky-400">Tag Net P&amp;L</th>
+          {% endif %}
           <th class="px-4 py-3 text-right">Bought Qty</th>
           <th class="px-4 py-3 text-right">Avg Buy</th>
           <th class="px-4 py-3 text-right">Sold Qty</th>
@@ -55,6 +70,11 @@
             onclick="window.location='/tradelog/trades/{{ row.date.isoformat() }}/{{ row.symbol }}'">
           <td class="px-4 py-3 font-bold text-white">{{ row.symbol }}</td>
           <td class="px-4 py-3 text-slate-300">{{ row.date.strftime("%Y-%m-%d") }}</td>
+          {% if tag %}
+          {% set ts = tag_stats.get((row.date, row.symbol), {"trades": 0, "net": 0.0}) %}
+          <td class="px-4 py-3 text-right text-slate-300">{{ ts.trades }}</td>
+          <td class="px-4 py-3 text-right font-medium {% if ts.net > 0 %}text-emerald-400{% elif ts.net < 0 %}text-red-400{% else %}text-slate-400{% endif %}">${{ "%.2f"|format(ts.net) }}</td>
+          {% endif %}
           <td class="px-4 py-3 text-right text-slate-300">{{ "%.0f"|format(row.bought_qty) }}</td>
           <td class="px-4 py-3 text-right text-slate-300">${{ "%.4f"|format(row.avg_buy_price) }}</td>
           <td class="px-4 py-3 text-right text-slate-300">{{ "%.0f"|format(row.sold_qty) }}</td>
@@ -77,6 +97,16 @@
         </tr>
         {% endfor %}
       </tbody>
+      {% if tag_totals %}
+      <tfoot>
+        <tr class="border-t border-slate-600 text-xs font-semibold">
+          <td colspan="2" class="px-4 py-3 text-slate-400">Tag total ({{ rows|length }} session{{ "" if rows|length == 1 else "s" }})</td>
+          <td class="px-4 py-3 text-right text-slate-300">{{ tag_totals.trades }}</td>
+          <td class="px-4 py-3 text-right {% if tag_totals.net > 0 %}text-emerald-400{% elif tag_totals.net < 0 %}text-red-400{% else %}text-slate-400{% endif %}">${{ "%.2f"|format(tag_totals.net) }}</td>
+          <td colspan="11" class="px-4 py-3 text-slate-500 font-normal">Session columns on the right cover the whole day for each symbol, including trades with other tags.</td>
+        </tr>
+      </tfoot>
+      {% endif %}
     </table>
   </div>
 </div>

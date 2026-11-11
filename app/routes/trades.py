@@ -1,7 +1,7 @@
 from flask import Blueprint, render_template, request, jsonify
-from sqlalchemy import func
+from sqlalchemy import func, or_, tuple_
 from app import db
-from app.models import OdsDailySymbol, StgExecution, Strategy, TradeTag
+from app.models import OdsDailySymbol, RtTrade, StgExecution, Strategy, TradeTag
 from app.services.market_data import get_candles
 from app.services.grouping import group_executions, annotate_cycles, POSITION_EPS
 from datetime import datetime
@@ -9,24 +9,66 @@ from collections import defaultdict
 trades_bp = Blueprint("trades", __name__)
 @trades_bp.route("/tradelog/trades")
 def trades():
-    """ODS view — one row per day+symbol, ordered by date desc."""
+    """
+    ODS view — one row per day+symbol, ordered by date desc.
+    Optional tag filter (?tag=<strategy id> | none): keeps the sessions that contain at
+    least one closed round trip with that tag (or no tag), using the same rt_trades +
+    trade_tags join as the dashboard, and adds per-tag trade count / net P&L columns so
+    the totals reconcile with the dashboard's Performance By Tag panel.
+    """
     symbol    = request.args.get("symbol", "").upper().strip()
     date_from = request.args.get("from", "")
     date_to   = request.args.get("to", "")
+    tag       = request.args.get("tag", "").strip()
+
+    d_from = datetime.strptime(date_from, "%Y-%m-%d").date() if date_from else None
+    d_to   = datetime.strptime(date_to,   "%Y-%m-%d").date() if date_to   else None
+
+    # Normalise the tag parameter: "" (all), "none" (untagged) or a strategy id
+    tag_id = None
+    if tag and tag != "none":
+        try:
+            tag_id = int(tag)
+        except ValueError:
+            tag = ""
+    tag_stats = {}   # (date, symbol) -> {"trades": n, "net": pnl}   (only when a tag filter is active)
+
     query = OdsDailySymbol.query
     if symbol:
         query = query.filter(OdsDailySymbol.symbol == symbol)
-    if date_from:
-        query = query.filter(OdsDailySymbol.date >= datetime.strptime(date_from, "%Y-%m-%d").date())
-    if date_to:
-        query = query.filter(OdsDailySymbol.date <= datetime.strptime(date_to, "%Y-%m-%d").date())
+    if d_from:
+        query = query.filter(OdsDailySymbol.date >= d_from)
+    if d_to:
+        query = query.filter(OdsDailySymbol.date <= d_to)
+
+    if tag:
+        rt_q = RtTrade.query.filter(RtTrade.is_open == False)   # noqa: E712
+        if symbol:
+            rt_q = rt_q.filter(RtTrade.symbol == symbol)
+        if d_from:
+            rt_q = rt_q.filter(RtTrade.date >= d_from)
+        if d_to:
+            rt_q = rt_q.filter(RtTrade.date <= d_to)
+        if tag == "none":
+            tagged_ids = db.session.query(TradeTag.exec_id)
+            rt_q = rt_q.filter(or_(RtTrade.exec_id.is_(None), ~RtTrade.exec_id.in_(tagged_ids)))
+        else:
+            rt_q = rt_q.join(TradeTag, TradeTag.exec_id == RtTrade.exec_id)\
+                       .filter(TradeTag.strategy_id == tag_id)
+        for r in rt_q.all():
+            st = tag_stats.setdefault((r.date, r.symbol), {"trades": 0, "net": 0.0})
+            st["trades"] += 1
+            st["net"]    += r.net_pnl or 0.0
+        pairs = list(tag_stats.keys())
+        query = query.filter(tuple_(OdsDailySymbol.date, OdsDailySymbol.symbol).in_(pairs)) \
+                if pairs else query.filter(db.false())
+
     rows = query.order_by(OdsDailySymbol.date.desc(),
                           OdsDailySymbol.symbol.asc()).limit(500).all()
     # Sum commission breakdown fields from STG for each (date, symbol) pair
     breakdown = {}
     if rows:
         pairs = [(r.date, r.symbol) for r in rows]
-        from sqlalchemy import tuple_
         stg_rows = StgExecution.query.filter(
             tuple_(StgExecution.date, StgExecution.symbol).in_(pairs)
         ).with_entities(
@@ -45,8 +87,26 @@ def trades():
             agg[key]["clearing"]    += s.clearing_charge    or 0.0
             agg[key]["regulatory"]  += s.regulatory_charge  or 0.0
         breakdown = dict(agg)
+
+    # Tag totals over the listed sessions (reconciles with the dashboard panel)
+    tag_totals = None
+    if tag:
+        tag_totals = {
+            "trades": sum(tag_stats.get((r.date, r.symbol), {}).get("trades", 0) for r in rows),
+            "net":    round(sum(tag_stats.get((r.date, r.symbol), {}).get("net", 0.0) for r in rows), 2),
+        }
+
+    # Dropdown: active strategies, plus hidden ones that still have tagged history
+    used_ids = {sid for (sid,) in db.session.query(TradeTag.strategy_id).distinct().all()}
+    strategies = [st for st in Strategy.query.order_by(Strategy.sort_order.asc(), Strategy.name.asc()).all()
+                  if st.is_active or st.id in used_ids]
+
     return render_template("trades.html", rows=rows, breakdown=breakdown,
-                           symbol=symbol, date_from=date_from, date_to=date_to)
+                           symbol=symbol, date_from=date_from, date_to=date_to,
+                           tag=tag, strategies=strategies,
+                           tag_stats=tag_stats, tag_totals=tag_totals)
+
+
 def _compute_exec_rows(groups):
     """
     For each FillGroup (partial fills of one order merged — see

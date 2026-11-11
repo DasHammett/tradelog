@@ -75,15 +75,15 @@ def _tag_perf(rt_rows):
     tag_of = {}
     for i in range(0, len(ids), 500):                       # chunk the IN() list
         chunk = ids[i:i + 500]
-        for exec_id, name in db.session.query(TradeTag.exec_id, Strategy.name)\
+        for exec_id, sid, name in db.session.query(TradeTag.exec_id, Strategy.id, Strategy.name)\
                 .join(Strategy, Strategy.id == TradeTag.strategy_id)\
                 .filter(TradeTag.exec_id.in_(chunk)).all():
-            tag_of[exec_id] = name
+            tag_of[exec_id] = (sid, name)
 
     buckets = {}
     for r in rt_rows:
-        name = tag_of.get(r.exec_id, UNTAGGED_LABEL)
-        b = buckets.setdefault(name, {"pnl": 0.0, "trades": 0, "wins": 0})
+        sid, name = tag_of.get(r.exec_id, (None, UNTAGGED_LABEL))
+        b = buckets.setdefault(name, {"id": sid, "pnl": 0.0, "trades": 0, "wins": 0})
         b["pnl"]    += r.net_pnl or 0
         b["trades"] += 1
         if (r.net_pnl or 0) > 0:
@@ -91,6 +91,7 @@ def _tag_perf(rt_rows):
 
     total = len(rt_rows)
     rows = [{
+        "id":       b["id"],            # strategy id (None for Untagged) — used for the Sessions link
         "label":    name,
         "pnl":      round(b["pnl"], 2),
         "trades":   b["trades"],
@@ -167,7 +168,6 @@ def get_dashboard_metrics(period: str = "mtd"):
     ).group_by(OdsDailySymbol.date).all()
     daily_avg_symbols = round(sum(r.n for r in sym_per_day) / len(sym_per_day), 1) if sym_per_day else 0
     equity_curve   = []
-    drawdown_curve = []
     running = 0
     peak    = 0
     max_dd  = 0
@@ -177,7 +177,6 @@ def get_dashboard_metrics(period: str = "mtd"):
         if running > peak:
             peak = running
         dd = peak - running
-        drawdown_curve.append({"date": s.date.isoformat(), "drawdown": round(running - peak, 2)})
         if dd > max_dd:
             max_dd = dd
     avg_pnl_by_day  = [{"date": s.date.isoformat(),
@@ -209,7 +208,6 @@ def get_dashboard_metrics(period: str = "mtd"):
         "equity_curve":     equity_curve,
         "avg_pnl_by_day":   avg_pnl_by_day,
         "win_rate_by_day":  win_rate_by_day,
-        "drawdown_curve":   drawdown_curve,
         "pnl_by_day":       [{"date": s.date.isoformat(), "pnl": s.net_pnl} for s in summaries],
         # Performance breakdowns (from rt_trades)
         "by_price":         _bucket_pnl(rt_rows),
@@ -217,4 +215,7 @@ def get_dashboard_metrics(period: str = "mtd"):
         "by_dow":           _dow_pnl(rt_rows),
         "by_tag":           by_tag,
         "has_tagged":       any(not r["untagged"] for r in by_tag),
+        # Bounds of the selected period, used to build Sessions links (None start = ALL)
+        "period_start":     None if period == "all" else start.isoformat(),
+        "period_end":       end.isoformat(),
     }
