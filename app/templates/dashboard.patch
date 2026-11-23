@@ -1,0 +1,42 @@
+diff --git a/app/templates/dashboard.html b/app/templates/dashboard.html
+index ad368f5..468d278 100644
+--- a/app/templates/dashboard.html
++++ b/app/templates/dashboard.html
+@@ -284,15 +284,15 @@ function renderPerfRows(containerId, data) {
+   el.innerHTML = data.map(row => {
+     const pos = row.pnl >= 0;
+     const w   = Math.round(Math.abs(row.pnl) / maxAbs * 100);
+-    return `<div class="flex items-center gap-2 text-xs">
+-      <span class="text-slate-300 w-20 shrink-0 truncate">${row.label}</span>
++    return `<div class="flex items-center gap-2 text-sm leading-4">
++      <span class="text-slate-300 w-24 shrink-0 truncate">${row.label}</span>
+       <div class="flex-1 h-1.5 bg-slate-700 rounded-full overflow-hidden">
+         <div class="h-full ${pos ? "bg-emerald-500" : "bg-red-500"} rounded-full" style="width:${w}%"></div>
+       </div>
+-      <span class="${pos ? "text-emerald-400" : "text-red-400"} w-14 text-right shrink-0">
++      <span class="${pos ? "text-emerald-400" : "text-red-400"} w-16 text-right shrink-0">
+         ${pos ? "" : "-"}$${Math.abs(row.pnl).toFixed(2)}
+       </span>
+-      <span class="text-slate-500 w-10 text-right shrink-0">${row.pct}%</span>
++      <span class="text-slate-500 w-12 text-right shrink-0">${row.pct}%</span>
+     </div>`;
+   }).join("");
+ }
+@@ -309,7 +309,7 @@ function tagHref(row) {
+ function renderTagRows(containerId, data) {
+   const el = document.getElementById(containerId);
+   if (!data.length) {
+-    el.innerHTML = `<p class="text-slate-500 text-xs">No trades in this period.</p>`;
++    el.innerHTML = `<p class="text-slate-500 text-sm">No trades in this period.</p>`;
+     return;
+   }
+   const maxAbs = Math.max(...data.map(d => Math.abs(d.pnl)), 0.01);
+@@ -319,7 +319,7 @@ function renderTagRows(containerId, data) {
+     const w   = Math.round(Math.abs(row.pnl) / maxAbs * 100);
+     const a   = document.createElement("a");
+     a.href      = tagHref(row);
+-    a.className = "block text-xs rounded-lg px-2 py-1 -mx-2 hover:bg-slate-700/60 transition-colors";
++    a.className = "block text-sm leading-4 rounded-lg px-2 py-1 -mx-2 hover:bg-slate-700/60 transition-colors";
+     a.title     = `${row.label}: ${row.trades} trade${row.trades === 1 ? "" : "s"}, ` +
+                   `${row.win_rate}% win rate, avg ${row.avg_pnl < 0 ? "-" : ""}$${Math.abs(row.avg_pnl).toFixed(2)} per trade. ` +
+                   `Click to see these sessions.`;

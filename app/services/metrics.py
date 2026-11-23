@@ -91,7 +91,7 @@ def _tag_perf(rt_rows):
 
     total = len(rt_rows)
     rows = [{
-        "id":       b["id"],            # strategy id (None for Untagged) — used for the Sessions link
+        "id":       b["id"],            # strategy id (None for Untagged) — used for the Trades link
         "label":    name,
         "pnl":      round(b["pnl"], 2),
         "trades":   b["trades"],
@@ -215,7 +215,7 @@ def get_dashboard_metrics(period: str = "mtd"):
         "by_dow":           _dow_pnl(rt_rows),
         "by_tag":           by_tag,
         "has_tagged":       any(not r["untagged"] for r in by_tag),
-        # Bounds of the selected period, used to build Sessions links (None start = ALL)
+        # Bounds of the selected period, used to build Trades links (None start = ALL)
         "period_start":     None if period == "all" else start.isoformat(),
         "period_end":       end.isoformat(),
     }

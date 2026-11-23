@@ -11,7 +11,7 @@ trades_bp = Blueprint("trades", __name__)
 def trades():
     """
     ODS view — one row per day+symbol, ordered by date desc.
-    Optional tag filter (?tag=<strategy id> | none): keeps the sessions that contain at
+    Optional tag filter (?tag=<strategy id> | none): keeps the rows (day + symbol) that contain at
     least one closed round trip with that tag (or no tag), using the same rt_trades +
     trade_tags join as the dashboard, and adds per-tag trade count / net P&L columns so
     the totals reconcile with the dashboard's Performance By Tag panel.
@@ -88,7 +88,7 @@ def trades():
             agg[key]["regulatory"]  += s.regulatory_charge  or 0.0
         breakdown = dict(agg)
 
-    # Tag totals over the listed sessions (reconciles with the dashboard panel)
+    # Tag totals over the listed rows (reconciles with the dashboard panel)
     tag_totals = None
     if tag:
         tag_totals = {
